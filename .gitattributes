@@ -1,0 +1,2 @@
+# 统一行尾:提交时存 LF,Windows 检出时按需转 CRLF(不影响 Keil 编辑)
+* text=auto
