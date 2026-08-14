@@ -102,3 +102,5 @@ FOCProject/
 ## 状态 / Status
 
 代码开发完成,各模式功能均已实现;硬件实测调试进行中。
+
+<img width="712" height="1200" alt="tb_image_share_1756172024298 jpg" src="https://github.com/user-attachments/assets/2857582e-6939-4cb3-91bd-c05203740ea8" />
