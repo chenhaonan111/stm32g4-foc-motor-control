@@ -115,3 +115,22 @@ void Amplitude_Limit(float *input, float min, float max)
     if (*input <= min) *input = min;
     if (*input >= max) *input = max;
 }
+
+/**
+ * 角度归一化到 [0, 2π) 区间。
+ * 说明: math_drv不include motor_publicdata.h(避免循环包含),
+ *       故用字面常量6.2831853f表示2π, 与sinehfi_drv.c做法一致。
+ */
+float Value_normalize(float angle)
+{
+    while (1)
+    {
+        if (angle > 6.2831853f)       angle -= 6.2831853f;
+        else if (angle < 0.0f)        angle += 6.2831853f;
+        else break;
+    }
+    return angle;
+}
+
+
+

@@ -5,6 +5,7 @@
 #include "adc.h"
 #include "motor_publicdata.h"
 #include "motor_system.h"
+#include "deadtime_comp.h"
 
 extern volatile uint16_t UsartTaskTim;
 extern volatile uint16_t KeyTaskTim;
@@ -13,17 +14,17 @@ void Global_Init(void)
 {
     HAL_Delay(100);                                         //延时等待电源稳定
 
-    Motor_System_Init();                                    //★全局结构初始化(电流/角度/SVPWM参数)
+    Motor_System_Init();                                    //全局结构初始化(电流/角度/SVPWM参数)
 
     HAL_ADCEx_Calibration_Start(&hadc2, ADC_SINGLE_ENDED);  //ADC校准
     HAL_Delay(10);                                          //等待ADC校准完成
     HAL_ADC_Start_DMA(&hadc2, (uint32_t *)MC.Sample.AdcBuff, 3);   //启动ADC规则组DMA搬运(母线电压等)
 
-    HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_ALL);         //启动编码器接口(阶段3暂不用,先开着)
+    HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_ALL);         //启动编码器接口
 
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);        //初始占空比0(安全)
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, 0);
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, 0);
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, PWM_CYCLE / 2);// 4250=ARR，0%占空比→下管全开(000)
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, PWM_CYCLE / 2);
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, PWM_CYCLE / 2);
 
     HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);               //开启三相PWM输出
     HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
@@ -32,7 +33,7 @@ void Global_Init(void)
     HAL_TIM_Base_Start_IT(&htim1);                          //开启TIM1更新中断(触发ADC注入 + 跑FOC)
     HAL_TIM_Base_Start_IT(&htim2);                          //开启TIM2节拍中断(VOFA + 按键)
 
-    /* ★阶段3 安全措施:驱动IC使能先注释掉。
+    /* 阶段3 安全措施:驱动IC使能先注释掉。
        第一步上电:保持注释,只验证开环算法(VOFA看Uq斜坡/三相占空比正弦/角度锯齿);
        验证OK后,取消下面三行注释,重新烧录,电机才会转。 */
     HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);  //使能SD1
@@ -106,7 +107,7 @@ void Target_Set(void)
             MC.Speed.MechanicalSpeedSet  =  Speed_Set_Dir * MC.Sample.AdcBuff[1] * 0.5f;             //使用波轮电位器给电机目标转速（速度闭环模式下）
         }break;
 
-        case HFI_SPEED_CURRENT_CLOSE:
+        case SQHFI_SPEED_CURRENT_CLOSE:
         {
             MC.Speed.MechanicalSpeedSet = Speed_Set_Dir * MC.Sample.AdcBuff[1] * 0.5f;
             if(MC.Speed.MechanicalSpeedSet <= 5 && MC.Speed.MechanicalSpeedSet >= -5)
@@ -114,14 +115,24 @@ void Target_Set(void)
                 MC.Speed.MechanicalSpeedSet = 0;
             }
         }
-        case HFI_SMO_SPEED_CURRENT_CLOSE:                                      
-        {       
+        case SQHFI_SMO_SPEED_CURRENT_CLOSE:
+        {
             MC.Speed.MechanicalSpeedSet  =  Speed_Set_Dir * MC.Sample.AdcBuff[1] * 0.5f;            //使用波轮电位器给电机目标转速（速度闭环模式下）
             if(MC.Speed.MechanicalSpeedSet <= 5 && MC.Speed.MechanicalSpeedSet >= -5)
             {
                 MC.Speed.MechanicalSpeedSet = 0;                               //消除电位器在0位附近采样值抖动引起电机蠕动
-            }                
-        }break;    
+            }
+        }break;
+
+        case SINEHFI_SPEED_CURRENT_CLOSE:
+        {
+            // 正弦高频注入速度电流闭环：电位器给速度给定（进入环路后还会被SpeedMax限幅到HFI低速域）
+            MC.Speed.MechanicalSpeedSet = Speed_Set_Dir * MC.Sample.AdcBuff[1] * 0.5f;
+            if(MC.Speed.MechanicalSpeedSet <= 5 && MC.Speed.MechanicalSpeedSet >= -5)
+            {
+                MC.Speed.MechanicalSpeedSet = 0;                               //消除电位器在0位附近采样值抖动引起电机蠕动
+            }
+        }break;
     }
 }
 
@@ -141,6 +152,26 @@ void HAL_ADCEx_InjectedConvCpltCallback(ADC_HandleTypeDef *hadc)
     
     Motor_System_Run();
 
+    /* ============ 死区补偿 ============ */
+    if(MC.Sample.CalibEndFlag == 1 && 
+       MC.Motor.RunState != MOTOR_STOP && 
+       MC.Motor.RunState != MOTOR_ERROR &&
+       MC.Motor.RunState != MOTOR_IDENTIFY)
+    {
+        // 计算三相电流极性和补偿量
+        Deadtime_Comp_Calculate(&MC.Dtc,
+                                MC.Sample.IuReal,
+                                MC.Sample.IvReal,
+                                MC.Sample.IwReal);
+
+        // 应用补偿到占空比
+        Deadtime_Comp_Apply(&MC.Dtc,
+                            &MC.Foc.DutyCycleA,
+                            &MC.Foc.DutyCycleB,
+                            &MC.Foc.DutyCycleC,
+                            PWM_CYCLE / 2);
+    }
+    
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, MC.Foc.DutyCycleA);
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_2, MC.Foc.DutyCycleB);
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, MC.Foc.DutyCycleC);

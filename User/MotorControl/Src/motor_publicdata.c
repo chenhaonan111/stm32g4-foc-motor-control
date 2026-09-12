@@ -14,10 +14,15 @@ void Motor_Struct_Init(void)
     MC.Motor.RunState = ADC_CALIB;
     // ErrorCode: 故障代码，初始无错误
     MC.Motor.ErrorCode = NONE_ERR;
-    // RunMode: 电机运行时的控制模式，HFI_SMO_SPEED_CURRENT_CLOSE 表示混合模式：
-    //          低速时使用高频注入(HFI)，中高速切换为滑模观测器(SMO)，并启用速度电流闭环
-    MC.Motor.RunMode = HFI_SMO_SPEED_CURRENT_CLOSE;
+    // RunMode: 电机运行时的控制模式，SINEHFI_SPEED_CURRENT_CLOSE 表示正弦HFI速度电流闭环
+    //          （上电先自动执行一次NSD极性辨识，完成后速度环接管，电位器给速度）
+    MC.Motor.RunMode = SINEHFI_SPEED_CURRENT_CLOSE;
 
+    // DutyCycle: 三相占空比初值 = ARR(0%占空比,000零矢量,下管全开安全态)
+    MC.Foc.DutyCycleA = PWM_CYCLE / 2;
+    MC.Foc.DutyCycleB = PWM_CYCLE / 2;
+    MC.Foc.DutyCycleC = PWM_CYCLE / 2;
+    
     // ============================================================================
     // 2. 采样参数（电流、电压）
     // ============================================================================
@@ -47,6 +52,9 @@ void Motor_Struct_Init(void)
     // ============================================================================
     // IdLPFFactor / IqLPFFactor: d/q轴电流低通滤波系数（一阶滤波α值，0~1）
     //                             0.1表示滤波效果较强，响应稍慢
+    //                             （曾试0.79（等效截止≈5kHz）提高反馈带宽，但在SineHfi
+    //                               陷波反馈路径下电流环穿越频率落入Wo陷波相位谷导致
+    //                               裕度崩溃，已回退。调整须与电流环增益联动仿真复核）
     MC.Foc.IdLPFFactor = 0.1f;
     MC.Foc.IqLPFFactor = 0.1f;
     // PwmCycle: PWM周期（通常为定时器的自动重装载值），用于计算占空比
@@ -81,6 +89,11 @@ void Motor_Struct_Init(void)
     //                        公式： (1 / (Ts * SpeedDivsionFactor)) * 60
     MC.Speed.ElectricalSpeedFactor = (1.0f / (TS * SPEED_DIVISION_FACTOR)) * 60.0f;
 
+    // 二阶巴特沃斯速度滤波参数：Calculate_Speed 按速度环分频周期执行
+    MC.Speed.ButterLPF.Wc = 628.0f;        // 100Hz，速度环带宽(典型5~50Hz)的5~10倍
+    MC.Speed.ButterLPF.Ts = TS * SPEED_DIVISION_FACTOR;   // 速度环周期 = 电流环周期 × 分频系数
+    Butter_LPF_Init(&MC.Speed.ButterLPF);
+
     // ============================================================================
     // 8. 电机参数识别相关（电阻电感识别）
     // ============================================================================
@@ -105,10 +118,10 @@ void Motor_Struct_Init(void)
     MC.SPLL.WeForeLPFFactor = 0.01f;       // 观测电角速度低通滤波系数
 
     // ============================================================================
-    // 11. 高频注入（HFI）及锁相环（HPLL）参数（用于低速无传感器）
+    // 11. 高频注入（SQHFI）及锁相环（HPLL）参数（用于低速无传感器）
     // ============================================================================
-    MC.HFI.Enable = 1;                     // 使能高频注入
-    MC.HFI.Uin = 1.4f;                     // 高频注入电压幅值（伏特）
+    MC.SqHfi.Enable = 1;                     // 使能高频注入
+    MC.SqHfi.Uin = 1.4f;                     // 高频注入电压幅值（伏特）
     MC.HPLL.Dir = 1;                       // 锁相环输入方向（1为正方向）
     MC.HPLL.Kp = 900.0f;                   // 比例系数
     MC.HPLL.Ki = 20.0f;                    // 积分系数
@@ -116,7 +129,39 @@ void Motor_Struct_Init(void)
     MC.HPLL.WeForeLPFFactor = 0.01f;       // 观测电角速度低通滤波系数
 
     // ============================================================================
-    // 12. 强拖（强制拖动）到观测器切换参数
+    // 12. 正弦高频注入（SineHfi）及标量误差锁相环（HFI_PLL）参数
+    //     （脉振正弦注入，低速无感；适配本板硬件：G4+双电阻采样+EG2104栅驱，
+    //       7对极电机，相电阻约0.19Ω）
+    // ============================================================================
+    MC.SineHfi.T = TS;
+    MC.SineHfi.Wo = 6855.8f;              // 注入角频率（rad/s，≈1091Hz）
+    MC.SineHfi.h = 1.0f;                  // 解调增益
+    MC.SineHfi.Uh = 1.4f;                 // 注入电压幅值(V) 
+    MC.SineHfi.K1 = 0.3f;                 // 陷波器分母阻尼比
+    MC.SineHfi.K2 = 0.0f;                 // 陷波器分子阻尼比(0=理想深陷波)
+    MC.SineHfi.Zeta = 0.2f;               // 带通滤波器阻尼比
+    HFI_Init(&MC.SineHfi);                // 滤波器系数计算与状态清零（须在以上参数赋值后调用）
+
+    // SineHfi专用标量误差锁相环（跟踪机械角度/机械角速度；与上方HPLL正交锁相环是不同结构）
+    MC.SineHfi.Pll.T = TS;
+    MC.SineHfi.Pll.Kp = 650.0f;           // PLL比例增益（跟踪机械角，电角度=OutRe×极对数）
+    MC.SineHfi.Pll.Ki = 210000.0f;
+    HFI_PLL_Init(&MC.SineHfi.Pll);
+
+    MC.SineHfi.Re = 0.0f;                 // 估计电角度初值
+    // 观测速度二阶巴特沃斯低通（Wc=100rad/s≈15.9Hz，ζ=1/√2）
+    // 本滤波在20kHz电流环中断内每拍执行一次，故 Ts = TS
+    MC.SineHfi.SpeedLpf.Wc = 100.0f;      // 截止角频率(rad/s)
+    MC.SineHfi.SpeedLpf.Ts = TS;          // 执行周期 = 电流环周期
+    Butter_LPF_Init(&MC.SineHfi.SpeedLpf);
+    MC.SineHfi.SpeedLPF = 0.0f;
+    MC.SineHfi.SpeedMax = 3500.0f;         // HFI速度给定限幅(电rpm，环路内按极对数折算到机械rpm后限幅)
+    MC.SineHfi.DebugIdBias = 0.0f;        // 自检模式Id偏置电流(A)：0=仅注入；0.2~0.5=加偏置检测饱和凸极性
+    MC.SineHfi.NsdCurrent = 5.0f;         // NSD极性辨识脉冲电流幅值(A)：
+                                          //   台架可用自检模式(DebugIdBias)实测饱和所需电流后调整
+
+    // ============================================================================
+    // 13. 强拖（强制拖动）到观测器切换参数
     //     用于启动时从开环强拖平滑切换至闭环观测器
     // ============================================================================
     MC.StrongDragToObs.GeneralMode = OPEN_LOOP;              // 当前模式：开环强拖
@@ -142,32 +187,39 @@ void Motor_Struct_Init(void)
     MC.StrongDragToObs.ObsMag = 0;                           // 观测器幅值
     
     // ============================================================================
-    // 13. 高频注入（HFI）到滑模观测器（SMO）切换参数
-    //     实现低速HFI到中高速SMO的无缝过渡
+    // 14. 高频注入（SQHFI）到滑模观测器（SMO）切换参数
+    //     实现低速SQHFI到中高速SMO的无缝过渡
     // ============================================================================
-    MC.HfiToObs.SpeedMin = 3000.0f;          // HFI工作最低速度（低于此值仅用HFI）
-    MC.HfiToObs.SpeedMid = 2000.0f;          // 中间速度（用于切换缓冲区）
-    MC.HfiToObs.SpeedMax = 4200.0f;          // SMO完全接管速度（高于此值仅用SMO）
-    MC.HfiToObs.HfiEleSpeed = 0;             // HFI观测的电角速度
-    MC.HfiToObs.HfiEleSpeedAbs = 0;          // HFI电角速度绝对值
-    MC.HfiToObs.HfiTheta = 0;                // HFI观测的角度
-    MC.HfiToObs.ObsEleSpeed = 0;             // SMO观测的电角速度
-    MC.HfiToObs.ObsEleSpeedAbs = 0;          // SMO电角速度绝对值
-    MC.HfiToObs.ObsTheta = 0;                // SMO观测的角度
-    MC.HfiToObs.ThetaErr = 0;                // 两种观测器的角度误差
-    MC.HfiToObs.CheckCnt = 0;                // 切换检测计数器
-    MC.HfiToObs.EleSpeedOut = 0;             // 最终输出的电角速度
-    MC.HfiToObs.ThetaOut = 0;                // 最终输出的电角度
-    MC.HfiToObs.ThetaOffset = 0;             // 角度偏移补偿
-    MC.HfiToObs.ObsMode = HFI;               // 当前观测器模式（初始为HFI）
-    MC.HfiToObs.HfiInjectMagMax = 5.0f;      // 高频注入最大电压幅值
-    MC.HfiToObs.HfiInjectMagMin = 1.4f;      // 高频注入最小电压幅值
+    MC.SqHfiToObs.SpeedMin = 3000.0f;          // SQHFI工作最低速度（低于此值仅用SQHFI）
+    MC.SqHfiToObs.SpeedMid = 2000.0f;          // 中间速度（用于切换缓冲区）
+    MC.SqHfiToObs.SpeedMax = 4200.0f;          // SMO完全接管速度（高于此值仅用SMO）
+    MC.SqHfiToObs.SqHfiEleSpeed = 0;             // SQHFI观测的电角速度
+    MC.SqHfiToObs.SqHfiEleSpeedAbs = 0;          // SQHFI电角速度绝对值
+    MC.SqHfiToObs.SqHfiTheta = 0;                // SQHFI观测的角度
+    MC.SqHfiToObs.ObsEleSpeed = 0;             // SMO观测的电角速度
+    MC.SqHfiToObs.ObsEleSpeedAbs = 0;          // SMO电角速度绝对值
+    MC.SqHfiToObs.ObsTheta = 0;                // SMO观测的角度
+    MC.SqHfiToObs.ThetaErr = 0;                // 两种观测器的角度误差
+    MC.SqHfiToObs.CheckCnt = 0;                // 切换检测计数器
+    MC.SqHfiToObs.EleSpeedOut = 0;             // 最终输出的电角速度
+    MC.SqHfiToObs.ThetaOut = 0;                // 最终输出的电角度
+    MC.SqHfiToObs.ThetaOffset = 0;             // 角度偏移补偿
+    MC.SqHfiToObs.ObsMode = SQHFI;               // 当前观测器模式（初始为SQHFI）
+    MC.SqHfiToObs.SqHfiInjectMagMax = 5.0f;      // 高频注入最大电压幅值
+    MC.SqHfiToObs.SqHfiInjectMagMin = 1.4f;      // 高频注入最小电压幅值
     
     // ============================================================================
-    // 14. 电流环PID参数（Iq、Id环）
+    // 15. 电流环PID参数（Iq、Id环）
+    //     【整定记录】曾试Kp=0.3082/Ki=0.0566+α=0.79反馈滤波，实机反而失稳：
+    //     SineHfi模式电流反馈路径含Wo=1091Hz陷波器，在700~1500Hz形成相位谷，
+    //     该组增益使电流环穿越频率(~763Hz)落入相位谷，裕度不足(仿真PM仅28°)，
+    //     叠加实际延迟后失稳，已回退。有感/强拖路径(反馈无陷波器)可用的增益
+    //     不可直接用于SineHfi路径。
+    //     后续整定应按辨识实测Ls/Rs做极点对消：Kp=Ls*ωc、Ki(每拍)=Rs*ωc*TS，
+    //     ωc取2π×300Hz左右（穿越须远离陷波相位谷），并仿真复核SineHfi路径裕度。
     // ============================================================================
-    MC.IqPid.Kp = 0.2f;                     // 比例系数
-    MC.IqPid.Ki = 0.002f;                   // 积分系数
+    MC.IqPid.Kp = 0.2f;                     // 比例系数(V/A)
+    MC.IqPid.Ki = 0.002f;                   // 积分系数(每拍累加口径)
     MC.IqPid.Kd = 0.0f;                     // 微分系数
     MC.IqPid.OutMax = 10;                   // 输出电压上限（伏特）
     MC.IqPid.OutMin = -10;                  // 输出电压下限（伏特）
@@ -178,7 +230,7 @@ void Motor_Struct_Init(void)
     MC.IdPid.OutMax = 10;
     MC.IdPid.OutMin = -10;
     // ============================================================================
-    // 15. 速度环PID参数（带分段限制）
+    // 16. 速度环PID参数（带分段限制）
     // ============================================================================
     MC.SpdPid.Kp = 0.001f;                  // 默认比例系数
     MC.SpdPid.KpMax = 0.005f;               // 比例系数最大值（用于变速调参）
@@ -187,7 +239,7 @@ void Motor_Struct_Init(void)
     MC.SpdPid.OutMax = 6;                   // 输出上限（对应Iq电流参考值，安培）
     MC.SpdPid.OutMin = -6;                  // 输出下限
     // ============================================================================
-    // 16. 位置环PID参数（用于位置伺服控制）
+    // 17. 位置环PID参数（用于位置伺服控制）
     // ============================================================================
     MC.PosPid.Kp = 0.5f;                    // 比例系数
     MC.PosPid.Ki = 0;                       // 积分系数（纯比例控制）

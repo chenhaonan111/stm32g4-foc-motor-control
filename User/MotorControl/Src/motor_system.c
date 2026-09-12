@@ -3,10 +3,12 @@
 #include "motor_identify.h"
 #include "motor_sensoruse.h"
 #include "motor_sensorless.h"
+#include "deadtime_comp.h"
 
 void Motor_System_Init(void)
 {
     Motor_Struct_Init();                       //结构体参数初始化
+    Deadtime_Comp_Init(&MC.Dtc, DT_COMP_TICKS, 0.05f);
 }
 
 /*系统运行主函数（状态机调度）*/
@@ -63,13 +65,16 @@ void Motor_System_Run(void)
             Motor_Identify();                        // 执行参数辨识状态机
             if (MC.Identify.EndFlag == 1)            // 辨识完成
             {
-                // 将辨识结果赋值给滑模观测器（用于无感控制）
-//                MC.SMO.Rs = MC.Identify.Rs;          // 定子电阻
-//                MC.SMO.Ld = MC.Identify.Ld;          // 直轴电感（假设 Ld = Lq）
-                // 若无故障，则切换至无感控制模式
                 if (MC.Motor.RunState != MOTOR_ERROR)
                 {
-                    MC.Motor.RunState = MOTOR_SENSORLESS;
+                    if (MC.Motor.RunMode >= STRONG_DRAG_CURRENT_OPEN)
+                    {
+                        MC.Motor.RunState = MOTOR_SENSORLESS;     // 无感模式
+                    }
+                    else
+                    {
+                        MC.Motor.RunState = MOTOR_SENSORUSE;      // 有感模式
+                    }
                 }
             }
         }
@@ -94,10 +99,10 @@ void Motor_System_Run(void)
         /* ----- 状态5：故障处理（封锁 PWM 输出，关闭驱动） ----- */
         case MOTOR_ERROR:
         {
-            // 将三相占空比清零（
-            MC.Foc.DutyCycleA = 0;
-            MC.Foc.DutyCycleB = 0;
-            MC.Foc.DutyCycleC = 0;
+            // 将三相占空比清零
+            MC.Foc.DutyCycleA = PWM_CYCLE / 2;
+            MC.Foc.DutyCycleB = PWM_CYCLE / 2;
+            MC.Foc.DutyCycleC = PWM_CYCLE / 2;
             // 根据硬件设计，拉低使能引脚（PB0、PA1、PA2 为驱动使能信号）
             HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
             HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET);
@@ -109,9 +114,9 @@ void Motor_System_Run(void)
         case MOTOR_STOP:
         {
             // 输出零占空比，电机停机
-            MC.Foc.DutyCycleA = 0;
-            MC.Foc.DutyCycleB = 0;
-            MC.Foc.DutyCycleC = 0;
+            MC.Foc.DutyCycleA = PWM_CYCLE / 2;
+            MC.Foc.DutyCycleB = PWM_CYCLE / 2;
+            MC.Foc.DutyCycleC = PWM_CYCLE / 2;
         }
         break;
 

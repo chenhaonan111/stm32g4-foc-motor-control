@@ -1062,6 +1062,31 @@
               <FileType>1</FileType>
               <FilePath>..\User\MotorControl\Src\observer_drv.c</FilePath>
             </File>
+            <File>
+              <FileName>sqhfi_drv.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\MotorControl\Src\sqhfi_drv.c</FilePath>
+            </File>
+            <File>
+              <FileName>pll_drv.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\MotorControl\Src\pll_drv.c</FilePath>
+            </File>
+            <File>
+              <FileName>butter_filter.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\MotorControl\Src\butter_filter.c</FilePath>
+            </File>
+            <File>
+              <FileName>deadtime_comp.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\MotorControl\Src\deadtime_comp.c</FilePath>
+            </File>
+            <File>
+              <FileName>sinehfi_drv.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\MotorControl\Src\sinehfi_drv.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

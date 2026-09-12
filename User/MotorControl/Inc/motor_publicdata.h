@@ -10,6 +10,10 @@
 #include "speed_drv.h"
 #include "position_drv.h"
 #include "observer_drv.h"
+#include "sqhfi_drv.h"
+#include "sinehfi_drv.h"
+#include "pll_drv.h"
+#include "deadtime_comp.h"
 
 #define LOW_RESITOR        4.7f     //母线电压检测下端电阻(KΩ)
 #define HIGH_RESITOR       100.0f   //母线电压检测上端电阻(KΩ)
@@ -19,7 +23,7 @@
 #define ADC_VREF           3.3f     //ADC基准电压（V）
 #define PWM_LIMLT          7800     //限制最大占空比
 #define PWM_CYCLE          8500     //PWM周期占空比(=2×ARR,SVPWM内部周期参数)
-#define TS                 0.00005f //FOC执行间隔（S）,=1/20kHz(注意TIM1重复计数=1,实际控制频率10kHz)
+#define TS                 0.00005f //FOC执行间隔（S）20kHz
 
 #define VBUS_FACTOR            ((ADC_VREF / ADC_RESOLUTION) / (LOW_RESITOR / (LOW_RESITOR + HIGH_RESITOR))) // 母线电压计算系数
 #define PHASE_CURRENT_FACTOR   ((ADC_VREF / ADC_RESOLUTION) / MAGNIFICATION / SAMPLING_RESITOR)             // 相电流计算系数
@@ -33,6 +37,11 @@
 #define TEMP_REF           298.15f  //参考温度值  25℃ + 273.15
 #define RESISTOR_REF       10000.0f //参考温度下的阻值
 #define RESISTOR_OTHER     10000.0f //分压的阻值
+
+#define DT_COMP_TIME_NS    250.0f   // 死区补偿时间，单位 ns
+#define TIM1_TICK_NS       5.882f   // TIM1 计数 tick 时间，单位 ns
+#define DT_COMP_TICKS      (DT_COMP_TIME_NS / TIM1_TICK_NS)
+#define DT_COMP_GAIN_DEFAULT  0.6f
 
 /* 电机与方向参数 */
 #define POLEPAIRS          7        //电机极对数(默认7对极,请按你的电机改)
@@ -61,10 +70,12 @@
 #define STRONG_DRAG_CURRENT_OPEN            0X05  // 电流开环强拖
 #define STRONG_DRAG_CURRENT_CLOSE            0X06  // 电流闭环强拖
 #define STRONG_DRAG_SMO_SPEED_CURRENT_LOOP  0X07  // 强拖切滑膜速度电流闭环
-#define HFI_CURRENT_CLOSE                   0X08  // 电流闭环高频注入（测试HFI角度收敛效果）
-#define HFI_SPEED_CURRENT_CLOSE             0X09  // 高频注入速度电流闭环
-#define HFI_POS_SPEED_CURRENT_CLOSE         0X0A  // 高频注入位置速度电流闭环
-#define HFI_SMO_SPEED_CURRENT_CLOSE         0X0B
+#define SQHFI_CURRENT_CLOSE                   0X08  // 电流闭环方波高频注入（测试SQHFI角度收敛效果）
+#define SQHFI_SPEED_CURRENT_CLOSE             0X09  // 方波高频注入速度电流闭环
+#define SQHFI_POS_SPEED_CURRENT_CLOSE         0X0A  // 方波高频注入位置速度电流闭环
+#define SQHFI_SMO_SPEED_CURRENT_CLOSE         0X0B  // 方波高频注入+滑模全速域速度电流闭环
+#define SINEHFI_SPEED_CURRENT_CLOSE          0X0C  // 正弦高频注入速度电流闭环(低速无感)
+#define SINEHFI_DEBUG_INJECTION              0X0D  // 正弦高频注入自检(仅注入解调不闭环,验证凸极性)
 
 
 #define SPEED_DIVISION_FACTOR  2     //速度环分频系数
@@ -105,7 +116,7 @@ typedef enum {
 
 /******************无感观测器类型*********************/
 typedef enum{
-    HFI = 0,                                        //高频注入
+    SQHFI = 0,                                        //方波高频注入
     FLUX,                                           //磁链
     SMO                                             //滑模
 }OBSERVER_MODE;
@@ -171,9 +182,9 @@ typedef struct{
     float           SpeedMax;
     float           SpeedRef;
     float           SpeedRefAbs;
-    float           HfiEleSpeed;
-    float           HfiEleSpeedAbs;
-    float           HfiTheta;
+    float           SqHfiEleSpeed;
+    float           SqHfiEleSpeedAbs;
+    float           SqHfiTheta;
     float           ObsEleSpeed;
     float           ObsEleSpeedAbs;
     float           ObsTheta;
@@ -186,9 +197,9 @@ typedef struct{
     OBSERVER_MODE   LastObsMode;
     float           SpeedChangeRate;
     float           SpeedLast;
-    float           HfiInjectMagMax;
-    float           HfiInjectMagMin;
-}HFI_TO_OBSERVER;
+    float           SqHfiInjectMagMax;
+    float           SqHfiInjectMagMin;
+}SQHFI_TO_OBSERVER;
 
 typedef struct
 {
@@ -208,8 +219,10 @@ typedef struct
     PLL_STRUCT              SPLL;
     PLL_STRUCT              HPLL;
     STRONG_DRAG_TO_OBSERVER StrongDragToObs;
-    HFI_STRUCT              HFI;
-    HFI_TO_OBSERVER         HfiToObs;
+    SQHFI_STRUCT              SqHfi;
+    HFI_STRUCT                SineHfi;
+    SQHFI_TO_OBSERVER         SqHfiToObs;
+    DEADTIME_COMP_STRUCT    Dtc;
 } MOTORCONTROL_STRUCT;
 
 extern MOTORCONTROL_STRUCT MC;

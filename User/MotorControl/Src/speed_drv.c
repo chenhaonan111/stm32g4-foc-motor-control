@@ -1,5 +1,6 @@
 #include "speed_drv.h"
 #include "math.h"
+
 /*计算反馈速度（基于电角度差*/
 void Calculate_Speed(SPEED_STRUCT *p)
 {
@@ -39,13 +40,13 @@ void Calculate_Speed(SPEED_STRUCT *p)
     p->ElectricalSpeedRaw = p->ElectricalPosChange * p->ElectricalSpeedFactor;
 
     // ------------------------------------------------------------------------
-    // 4. 一阶低通滤波（减小速度噪声）
+    // 4. 二阶巴特沃斯低通滤波（减小速度噪声，-40dB/dec）
     // ------------------------------------------------------------------------
-    // 滤波公式：Y(n) = X(n)*α + Y(n-1)*(1-α)
-    // α = ElectricalSpeedLPFFactor（滤波系数，0~1之间，值越小滤波越平滑）
-    p->ElectricalSpeedLPF = p->ElectricalSpeedRaw * p->ElectricalSpeedLPFFactor 
-                          + p->ElectricalSpeedLPF * (1 - p->ElectricalSpeedLPFFactor);
-
+    // Butter_LPF_Calc 内部执行二阶差分方程，结果写入 Output
+    p->ButterLPF.Input = p->ElectricalSpeedRaw;
+    Butter_LPF_Calc(&p->ButterLPF);
+    p->ElectricalSpeedLPF = p->ButterLPF.Output;    // 复用 ElectricalSpeedLPF 变量
+    
     // ------------------------------------------------------------------------
     // 5. 计算机械速度（单位：rpm）
     // ------------------------------------------------------------------------

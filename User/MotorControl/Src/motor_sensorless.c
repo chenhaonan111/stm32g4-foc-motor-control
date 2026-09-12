@@ -6,10 +6,12 @@ void Strong_Drag_Current_Open_Loop(void);
 void Strong_Drag_Current_Close_Loop(void);
 void Strong_Drag_Smo_Speed_Current_Loop(void);
 void Strong_Drag_To_Observer_Cal(STRONG_DRAG_TO_OBSERVER *p);
-void Hfi_Current_Close_Loop(void);
-void Hfi_Speed_Current_Loop(void);
-void Hfi_Smo_Speed_Current_Loop(void);
-void Hfi_TO_Obsever_Cal(HFI_TO_OBSERVER *p);
+void SqHfi_Current_Close_Loop(void);
+void SqHfi_Speed_Current_Loop(void);
+void SqHfi_Smo_Speed_Current_Loop(void);
+void SqHfi_TO_Obsever_Cal(SQHFI_TO_OBSERVER *p);
+void SineHfi_Speed_Current_Loop(void);
+void SineHfi_Debug_Injection_Loop(void);
 
 /*无传感器（无感）模式主控函数*/
 void Sensorless_Control()
@@ -53,35 +55,60 @@ void Sensorless_Control()
         break;
 
         // --------------------------------------------------------------------
-        // 模式4: 高频注入（HFI）电流闭环（HFI_CURRENT_CLOSE）
+        // 模式4: 高频注入（SQHFI）电流闭环（SQHFI_CURRENT_CLOSE）
         // --------------------------------------------------------------------
         // 说明: 仅使用高频注入法估算转子位置（静止或极低速），实现电流闭环控制。
-        //       没有速度环，需要外部手动控制电流或速度参考。注意：纯HFI不可高速运行，
+        //       没有速度环，需要外部手动控制电流或速度参考。注意：纯SQHFI不可高速运行，
         //       通常用于电机堵转或极低速调试。
-        case HFI_CURRENT_CLOSE:
+        case SQHFI_CURRENT_CLOSE:
         {
-            Hfi_Current_Close_Loop();
+            SqHfi_Current_Close_Loop();
         }
         break;
 
         // --------------------------------------------------------------------
-        // 模式5: 高频注入（HFI）速度电流闭环（HFI_SPEED_CURRENT_CLOSE）
+        // 模式5: 高频注入（SQHFI）速度电流闭环（SQHFI_SPEED_CURRENT_CLOSE）
         // --------------------------------------------------------------------
-        // 说明: 在 HFI 基础上增加速度外环，实现速度闭环控制。但由于 HFI 本身依赖注入信号，
+        // 说明: 在 SQHFI 基础上增加速度外环，实现速度闭环控制。但由于 SQHFI 本身依赖注入信号，
         //       响应带宽有限，通常只能用于较低转速（例如针对4006无刷电机限速2500rpm）。
         //       适合零速到中低速的无传感器速度控制。
-        case HFI_SPEED_CURRENT_CLOSE:
+        case SQHFI_SPEED_CURRENT_CLOSE:
         {
-            Hfi_Speed_Current_Loop();
+            SqHfi_Speed_Current_Loop();
         }
         break;
 
         // --------------------------------------------------------------------
-        // 模式6: 高频注入（HFI）+ 滑模观测器（SMO）全速域无感速度电流闭环（HFI_SMO_SPEED_CURRENT_CLOSE）
+        // 模式6: 高频注入（SQHFI）+ 滑模观测器（SMO）全速域无感速度电流闭环（SQHFI_SMO_SPEED_CURRENT_CLOSE）
         // --------------------------------------------------------------------
-        case HFI_SMO_SPEED_CURRENT_CLOSE:
+        case SQHFI_SMO_SPEED_CURRENT_CLOSE:
         {
-            Hfi_Smo_Speed_Current_Loop();
+            SqHfi_Smo_Speed_Current_Loop();
+        }
+        break;
+
+        // --------------------------------------------------------------------
+        // 模式7: 正弦高频注入（SineHfi）速度电流闭环（SINEHFI_SPEED_CURRENT_CLOSE）
+        // --------------------------------------------------------------------
+        // 说明: 脉振正弦注入低速无感方案。
+        //       解调输出∝sin(2Δθ)送专用标量误差锁相环（HFI_PLL，跟踪机械角），
+        //       与方波HFI(SQHFI+HPLL正交锁相环)是两套独立结构。
+        //       仅低速域有效，速度给定由SpeedMax限幅。
+        case SINEHFI_SPEED_CURRENT_CLOSE:
+        {
+            SineHfi_Speed_Current_Loop();
+        }
+        break;
+
+        // --------------------------------------------------------------------
+        // 模式8: 正弦高频注入自检（SINEHFI_DEBUG_INJECTION）
+        // --------------------------------------------------------------------
+        // 说明: 仅注入+解调，不闭环、不运行PLL（Re固定为0，注入轴静止在A相轴）。
+        //       上电验证电机凸极性：手转转子，OutputQ应随电角度呈2倍频正弦变化。
+        //       DebugIdBias>0时叠加Id偏置电流闭环，检测磁饱和凸极性(SPMSM适用性)。
+        case SINEHFI_DEBUG_INJECTION:
+        {
+            SineHfi_Debug_Injection_Loop();
         }
         break;
     }
@@ -451,8 +478,8 @@ void Strong_Drag_Smo_Speed_Current_Loop(void)
     Calculate_SVPWM(&MC.Foc);
 }
 
-/*高频注入（HFI）电流闭环控制（无传感器低速/零速）*/
-void Hfi_Current_Close_Loop(void)
+/*高频注入（SQHFI）电流闭环控制（无传感器低速/零速）*/
+void SqHfi_Current_Close_Loop(void)
 {
     // ============================================================================
     // 1. 电流采样与 Clark 变换（三相静止 -> 两相静止）
@@ -471,34 +498,34 @@ void Hfi_Current_Close_Loop(void)
     Park_Transform(&MC.Foc);
 
     // ============================================================================
-    // 3. 将电流值传递给高频注入模块（HFI）
+    // 3. 将电流值传递给高频注入模块（SQHFI）
     // ============================================================================
-    MC.HFI.Id = MC.Foc.Id;               // d轴电流（实际反馈）
-    MC.HFI.Iq = MC.Foc.Iq;               // q轴电流
-    MC.HFI.Ialpha = MC.Foc.Ialpha;       // α轴电流
-    MC.HFI.Ibeta  = MC.Foc.Ibeta;        // β轴电流
+    MC.SqHfi.Id = MC.Foc.Id;               // d轴电流（实际反馈）
+    MC.SqHfi.Iq = MC.Foc.Iq;               // q轴电流
+    MC.SqHfi.Ialpha = MC.Foc.Ialpha;       // α轴电流
+    MC.SqHfi.Ibeta  = MC.Foc.Ibeta;        // β轴电流
 
     // 执行高频注入算法：注入高频电压，提取负序电流分量，输出 IdRef（若需要）、
     // IalphaOut/IbetaOut（用于PLL）、NSDFlag（极性检测标志）等
-    HFI_Calculate(&MC.HFI);
+    SQHFI_Calculate(&MC.SqHfi);
 
     // ============================================================================
     // 4. 极性检测（NSD）处理
     //    当检测到磁极方向（N/S）时，对锁相环累积角度进行π弧度（180°）修正
     // ============================================================================
-    if(MC.HFI.NSDFlag == 0)              // 如果尚未完成极性检测（NSDFlag=0表示未确定）
+    if(MC.SqHfi.NSDFlag == 0)              // 如果尚未完成极性检测（NSDFlag=0表示未确定）
     {
         // 将高频注入计算的 Id 参考值（用于磁极判断时的励磁电流）赋值给 Id 环目标
-        MC.IdPid.Ref = MC.HFI.IdRef;
+        MC.IdPid.Ref = MC.SqHfi.IdRef;
     }
     else
     {
         MC.IqPid.Ref = 0.08f;
     }
     // 如果 NSD 输出为 1，表示需要翻转估算角度（即判断出实际N极与估算方向相反）
-    if(MC.HFI.NSDOut == 1)
+    if(MC.SqHfi.NSDOut == 1)
     {
-        MC.HFI.NSDOut = 0;               // 清除标志，只执行一次
+        MC.SqHfi.NSDOut = 0;               // 清除标志，只执行一次
         // 锁相环累积角度加上 π（180°），实现磁极校正
         MC.HPLL.ThetaFore += ONE_PI;
         // 将角度归一化到 [0, 2π) 范围
@@ -514,17 +541,17 @@ void Hfi_Current_Close_Loop(void)
     // 根据锁相环当前角度计算正余弦（用于内部PLL计算）
     Calculate_Sin_Cos(MC.HPLL.EThetaPU, &MC.HPLL.SinVal, &MC.HPLL.CosVal);
     // 设置PLL的输入信号：Ain = Ibeta_out, Bin = -Ialpha_out（通常为高频负序电流分量）
-    MC.HPLL.Ain = MC.HFI.IbetaOut;
-    MC.HPLL.Bin = -MC.HFI.IalphaOut;
+    MC.HPLL.Ain = MC.SqHfi.IbetaOut;
+    MC.HPLL.Bin = -MC.SqHfi.IalphaOut;
     // 执行PLL计算，输出电角度（EThetaPU）和电角速度（We）
     PLL_Calculate(&MC.HPLL);
 
     // ============================================================================
     // 6. 电流环PID控制（使用高频注入提取的基波电流分量）
     // ============================================================================
-    // 注：HFI.IdBase / IqBase 是通过滤波器从总电流中分离出的基波电流（用于闭环控制）
-    MC.IqPid.Fbk = MC.HFI.IqBase;        // q轴基波电流反馈
-    MC.IdPid.Fbk = MC.HFI.IdBase;        // d轴基波电流反馈
+    // 注：SQHFI.IdBase / IqBase 是通过滤波器从总电流中分离出的基波电流（用于闭环控制）
+    MC.IqPid.Fbk = MC.SqHfi.IqBase;        // q轴基波电流反馈
+    MC.IdPid.Fbk = MC.SqHfi.IdBase;        // d轴基波电流反馈
     // 执行电流环PI调节，输出 Ud、Uq（基波电压指令）
     PID_Control(&MC.IqPid);
     PID_Control(&MC.IdPid);
@@ -534,10 +561,10 @@ void Hfi_Current_Close_Loop(void)
     // ============================================================================
     MC.Foc.Uq = MC.IqPid.Out;            // q轴电压（基波）
     // d轴电压 = Id环输出 + 高频注入电压（Uin），将高频电压叠加到Ud上
-    if(MC.HFI.Dir == 1){
-        MC.Foc.Ud = MC.IdPid.Out + MC.HFI.Uin;   // +1.4V
+    if(MC.SqHfi.Dir == 1){
+        MC.Foc.Ud = MC.IdPid.Out + MC.SqHfi.Uin;   // +1.4V
     }else{
-        MC.Foc.Ud = MC.IdPid.Out - MC.HFI.Uin;   // -1.4V
+        MC.Foc.Ud = MC.IdPid.Out - MC.SqHfi.Uin;   // -1.4V
     }
     // 反Park变换：Ud/Uq -> Ualpha/Ubeta（使用锁相环估算的电角度）
     IPark_Transform(&MC.Foc);
@@ -554,8 +581,8 @@ void Hfi_Current_Close_Loop(void)
     Calculate_SVPWM(&MC.Foc);
 }
 
-/*高频注入（HFI）速度-电流双闭环控制（无传感器低速段*/
-void Hfi_Speed_Current_Loop(void)
+/*高频注入（SQHFI）速度-电流双闭环控制（无传感器低速段*/
+void SqHfi_Speed_Current_Loop(void)
 {
     // ============================================================================
     // 1. T型加减速处理（速度斜坡生成）
@@ -597,28 +624,28 @@ void Hfi_Speed_Current_Loop(void)
     // ============================================================================
     // 5. 高频注入算法计算
     // ============================================================================
-    // 将电流值传递给HFI模块
-    MC.HFI.Id = MC.Foc.Id;
-    MC.HFI.Iq = MC.Foc.Iq;
-    MC.HFI.Ialpha = MC.Foc.Ialpha;
-    MC.HFI.Ibeta  = MC.Foc.Ibeta;
+    // 将电流值传递给SQHFI模块
+    MC.SqHfi.Id = MC.Foc.Id;
+    MC.SqHfi.Iq = MC.Foc.Iq;
+    MC.SqHfi.Ialpha = MC.Foc.Ialpha;
+    MC.SqHfi.Ibeta  = MC.Foc.Ibeta;
     // 执行高频注入核心算法：注入高频电压，提取负序电流和基波电流分量，
     // 输出 IdRef（极性检测用）、IalphaOut/IbetaOut（用于PLL）、NSDFlag、NSDOut等
-    HFI_Calculate(&MC.HFI);
+    SQHFI_Calculate(&MC.SqHfi);
 
     // ============================================================================
     // 6. 极性检测（NSD）与角度校正
     // ============================================================================
-    // 如果尚未完成极性检测（NSDFlag==0），则使用HFI计算的IdRef作为Id环目标值，
+    // 如果尚未完成极性检测（NSDFlag==0），则使用SQHFI计算的IdRef作为Id环目标值，
     // 施加d轴电流脉冲来判断磁极方向。
-    if(MC.HFI.NSDFlag == 0)
+    if(MC.SqHfi.NSDFlag == 0)
     {
-        MC.IdPid.Ref = MC.HFI.IdRef;
+        MC.IdPid.Ref = MC.SqHfi.IdRef;
     }
     // 如果NSD输出为1，表示需要翻转估算角度（实际N极与估算方向相反）
-    if(MC.HFI.NSDOut == 1)
+    if(MC.SqHfi.NSDOut == 1)
     {
-        MC.HFI.NSDOut = 0;              // 清除标志，只执行一次
+        MC.SqHfi.NSDOut = 0;              // 清除标志，只执行一次
         // 锁相环累积角度加上π（180°）进行校正
         MC.HPLL.ThetaFore += ONE_PI;
         // 角度归一化到 [0, 2π)
@@ -634,16 +661,16 @@ void Hfi_Speed_Current_Loop(void)
     // 根据当前锁相环电角度计算正余弦（用于PLL内部计算）
     Calculate_Sin_Cos(MC.HPLL.EThetaPU, &MC.HPLL.SinVal, &MC.HPLL.CosVal);
     // 设置PLL输入信号：Ain = Ibeta_out, Bin = -Ialpha_out（高频负序电流分量）
-    MC.HPLL.Ain = MC.HFI.IbetaOut;
-    MC.HPLL.Bin = -MC.HFI.IalphaOut;
+    MC.HPLL.Ain = MC.SqHfi.IbetaOut;
+    MC.HPLL.Bin = -MC.SqHfi.IalphaOut;
     // 执行PLL，输出估算的电角度（EThetaPU）和电角速度（We）
     PLL_Calculate(&MC.HPLL);
 
     // ============================================================================
-    // 8. 电流环PID控制（使用HFI提取的基波电流分量）
+    // 8. 电流环PID控制（使用SQHFI提取的基波电流分量）
     // ============================================================================
-    MC.IqPid.Fbk = MC.HFI.IqBase;       // q轴基波电流反馈（转矩电流）
-    MC.IdPid.Fbk = MC.HFI.IdBase;       // d轴基波电流反馈（励磁电流）
+    MC.IqPid.Fbk = MC.SqHfi.IqBase;       // q轴基波电流反馈（转矩电流）
+    MC.IdPid.Fbk = MC.SqHfi.IdBase;       // d轴基波电流反馈（励磁电流）
     PID_Control(&MC.IqPid);             // Iq环PI调节，输出Uq
     PID_Control(&MC.IdPid);             // Id环PI调节，输出Ud
 
@@ -651,12 +678,12 @@ void Hfi_Speed_Current_Loop(void)
     // 9. 电压指令合成与反Park变换
     // ============================================================================
     MC.Foc.Uq = MC.IqPid.Out;           // q轴电压指令（基波）
-    // d轴电压指令 = Id环输出 ± 高频注入电压（Uin），叠加方向由HFI方向标志Dir决定
+    // d轴电压指令 = Id环输出 ± 高频注入电压（Uin），叠加方向由SQHFI方向标志Dir决定
     // Dir==1时加，Dir==其他时减（用于匹配注入信号的正负序）
-    if(MC.HFI.Dir == 1){
-        MC.Foc.Ud = MC.IdPid.Out + MC.HFI.Uin;
+    if(MC.SqHfi.Dir == 1){
+        MC.Foc.Ud = MC.IdPid.Out + MC.SqHfi.Uin;
     }else{
-        MC.Foc.Ud = MC.IdPid.Out - MC.HFI.Uin;
+        MC.Foc.Ud = MC.IdPid.Out - MC.SqHfi.Uin;
     }
     // 反Park变换：Ud/Uq -> Ualpha/Ubeta（使用HPLL估算的电角度）
     IPark_Transform(&MC.Foc);
@@ -673,8 +700,8 @@ void Hfi_Speed_Current_Loop(void)
     Calculate_SVPWM(&MC.Foc);
 }
 
-/*高频注入（HFI）+ 滑模观测器（SMO）混合无传感器速度-电流双闭环控制*/
-void Hfi_Smo_Speed_Current_Loop(void)
+/*高频注入（SQHFI）+ 滑模观测器（SMO）混合无传感器速度-电流双闭环控制*/
+void SqHfi_Smo_Speed_Current_Loop(void)
 {
     // ============================================================================
     // 1. 动态更新滑模观测器增益（基于母线电压）
@@ -715,30 +742,30 @@ void Hfi_Smo_Speed_Current_Loop(void)
     Calculate_Sin_Cos(MC.SPLL.EThetaPU, &MC.SPLL.SinVal, &MC.SPLL.CosVal);
 
     // ============================================================================
-    // 5. 高频注入（HFI）运算（仅在使能时执行）
+    // 5. 高频注入（SQHFI）运算（仅在使能时执行）
     // ============================================================================
-    if(MC.HFI.Enable == 1)
+    if(MC.SqHfi.Enable == 1)
     {
-        // 将电流值传递给 HFI 模块（Id/Iq 为旋转坐标系下电流，Ialpha/Ibeta 为静止坐标系）
-        MC.HFI.Id = MC.Foc.Id;
-        MC.HFI.Iq = MC.Foc.Iq;
-        MC.HFI.Ialpha = MC.Foc.Ialpha;
-        MC.HFI.Ibeta  = MC.Foc.Ibeta;
+        // 将电流值传递给 SQHFI 模块（Id/Iq 为旋转坐标系下电流，Ialpha/Ibeta 为静止坐标系）
+        MC.SqHfi.Id = MC.Foc.Id;
+        MC.SqHfi.Iq = MC.Foc.Iq;
+        MC.SqHfi.Ialpha = MC.Foc.Ialpha;
+        MC.SqHfi.Ibeta  = MC.Foc.Ibeta;
         // 执行高频注入核心算法：注入高频电压，提取负序电流和基波电流分量，
         // 输出 IdRef（极性检测用）、IalphaOut/IbetaOut（用于PLL）、NSDFlag、NSDOut等
-        HFI_Calculate(&MC.HFI);
+        SQHFI_Calculate(&MC.SqHfi);
 
         // --- 极性检测（NSD）处理 ---
         // NSDFlag == 0 表示尚未完成极性检测（即未确定磁极方向）
-        if(MC.HFI.NSDFlag == 0)
+        if(MC.SqHfi.NSDFlag == 0)
         {
-            // 使用 HFI 计算的 IdRef 作为 Id 环目标值，施加 d 轴电流脉冲来判断磁极方向
-            MC.IdPid.Ref = MC.HFI.IdRef;
+            // 使用 SQHFI 计算的 IdRef 作为 Id 环目标值，施加 d 轴电流脉冲来判断磁极方向
+            MC.IdPid.Ref = MC.SqHfi.IdRef;
         }
         // NSDOut == 1 表示需要翻转估算角度（实际 N 极与估算方向相差 180°）
-        if(MC.HFI.NSDOut == 1)
+        if(MC.SqHfi.NSDOut == 1)
         {
-            MC.HFI.NSDOut = 0;             // 清除标志，只执行一次
+            MC.SqHfi.NSDOut = 0;             // 清除标志，只执行一次
             // 锁相环累积角度加上 π（180°）进行校正
             MC.HPLL.ThetaFore += ONE_PI;
             // 角度归一化到 [0, 2π)
@@ -748,29 +775,29 @@ void Hfi_Smo_Speed_Current_Loop(void)
             }
         }
 
-        // --- HFI 专用锁相环（HPLL）从高频响应中提取角度和速度 ---
+        // --- SQHFI 专用锁相环（HPLL）从高频响应中提取角度和速度 ---
         // 根据当前 HPLL 电角度计算正余弦（用于 PLL 内部运算）
         Calculate_Sin_Cos(MC.HPLL.EThetaPU, &MC.HPLL.SinVal, &MC.HPLL.CosVal);
         // 设置 PLL 输入信号：Ain = Ibeta_out, Bin = -Ialpha_out（高频负序电流分量）
-        MC.HPLL.Ain = MC.HFI.IbetaOut;
-        MC.HPLL.Bin = -MC.HFI.IalphaOut;
+        MC.HPLL.Ain = MC.SqHfi.IbetaOut;
+        MC.HPLL.Bin = -MC.SqHfi.IalphaOut;
         // 执行 PLL，输出估算的电角度（HPLL.EThetaPU）和电角速度（HPLL.We）
         PLL_Calculate(&MC.HPLL);
     }
 
     // ============================================================================
-    // 6. HFI 与 SMO 观测器切换逻辑
+    // 6. SQHFI 与 SMO 观测器切换逻辑
     // ============================================================================
     // 记录两种观测器估算的速度（rpm）和角度（标幺值）
-    MC.HfiToObs.HfiEleSpeed = MC.HPLL.WeForeLPF / TWO_PI * 60.0f;  // HFI 速度（rad/s → rpm）
-    MC.HfiToObs.HfiTheta   = MC.HPLL.EThetaPU;                     // HFI 角度（标幺值 0~1）
-    MC.HfiToObs.ObsEleSpeed = MC.SPLL.WeForeLPF / TWO_PI * 60.0f;  // SMO 速度（rpm）
-    MC.HfiToObs.ObsTheta    = MC.SPLL.EThetaPU;                    // SMO 角度（标幺值）
-    MC.HfiToObs.SpeedRef    = MC.TAccDec.SpeedOut;                 // 当前速度参考值
+    MC.SqHfiToObs.SqHfiEleSpeed = MC.HPLL.WeForeLPF / TWO_PI * 60.0f;  // SQHFI 速度（rad/s → rpm）
+    MC.SqHfiToObs.SqHfiTheta   = MC.HPLL.EThetaPU;                     // SQHFI 角度（标幺值 0~1）
+    MC.SqHfiToObs.ObsEleSpeed = MC.SPLL.WeForeLPF / TWO_PI * 60.0f;  // SMO 速度（rpm）
+    MC.SqHfiToObs.ObsTheta    = MC.SPLL.EThetaPU;                    // SMO 角度（标幺值）
+    MC.SqHfiToObs.SpeedRef    = MC.TAccDec.SpeedOut;                 // 当前速度参考值
     // 根据速度区间、角度误差等条件，计算最终输出的电角度（ThetaOut）和速度（EleSpeedOut）
-    Hfi_TO_Obsever_Cal(&MC.HfiToObs);
+    SqHfi_TO_Obsever_Cal(&MC.SqHfiToObs);
 
-    MC.Speed.MechanicalSpeed = MC.HfiToObs.EleSpeedOut / POLEPAIRS;   //用于屏幕显示转速
+    MC.Speed.MechanicalSpeed = MC.SqHfiToObs.EleSpeedOut / POLEPAIRS;   //用于屏幕显示转速
     
     // ============================================================================
     // 7. 速度环PID控制（按分频因子降频执行）
@@ -783,7 +810,7 @@ void Hfi_Smo_Speed_Current_Loop(void)
         // 速度环目标值：T型加减速输出的速度（rpm）
         MC.SpdPid.Ref = MC.TAccDec.SpeedOut;
         // 速度环反馈值：经切换逻辑后输出的观测速度（rpm）
-        MC.SpdPid.Fbk = MC.HfiToObs.EleSpeedOut;
+        MC.SpdPid.Fbk = MC.SqHfiToObs.EleSpeedOut;
         // 执行速度环PI调节，输出作为 Iq 电流环的参考值
         PID_Control(&MC.SpdPid);
         MC.IqPid.Ref = MC.SpdPid.Out;
@@ -800,7 +827,7 @@ void Hfi_Smo_Speed_Current_Loop(void)
 
     // 8.2 Park 变换（两相静止 -> 旋转坐标系）
     // thetafrac 函数用于取小数部分，将角度归一化到 [0,1) 范围
-    Calculate_Sin_Cos(MC.HfiToObs.ThetaOut, &MC.Foc.SinVal, &MC.Foc.CosVal);
+    Calculate_Sin_Cos(MC.SqHfiToObs.ThetaOut, &MC.Foc.SinVal, &MC.Foc.CosVal);
     Park_Transform(&MC.Foc);                // 输出 Id, Iq（在实际估算坐标系下）
 
     // 8.3 Id/Iq 低通滤波（一阶滤波，抑制采样噪声）
@@ -808,17 +835,17 @@ void Hfi_Smo_Speed_Current_Loop(void)
     MC.Foc.IqLPF = MC.Foc.Iq * MC.Foc.IqLPFFactor + MC.Foc.IqLPF * (1 - MC.Foc.IqLPFFactor);
 
     // 8.4 选择电流反馈源
-    if(MC.HFI.Enable == 0)
+    if(MC.SqHfi.Enable == 0)
     {
-        // 未使能 HFI（即纯 SMO 模式）：使用 FOC 变换后的 Id/Iq 经低通滤波后的值
+        // 未使能 SQHFI（即纯 SMO 模式）：使用 FOC 变换后的 Id/Iq 经低通滤波后的值
         MC.IqPid.Fbk = MC.Foc.IqLPF;
         MC.IdPid.Fbk = MC.Foc.IdLPF;
     }
     else
     {
-        // 使能 HFI（低速段）：使用 HFI 算法提取的基波电流分量（已滤除高频成分）
-        MC.IqPid.Fbk = MC.HFI.IqBase;
-        MC.IdPid.Fbk = MC.HFI.IdBase;
+        // 使能 SQHFI（低速段）：使用 SQHFI 算法提取的基波电流分量（已滤除高频成分）
+        MC.IqPid.Fbk = MC.SqHfi.IqBase;
+        MC.IdPid.Fbk = MC.SqHfi.IdBase;
     }
 
     // 8.5 执行电流环PID调节
@@ -827,21 +854,21 @@ void Hfi_Smo_Speed_Current_Loop(void)
 
     // 8.6 电压指令合成
     MC.Foc.Uq = MC.IqPid.Out;               // q轴电压指令（基波）
-    if(MC.HFI.Enable == 1)
+    if(MC.SqHfi.Enable == 1)
     {
-        // 使能 HFI 时，需要将高频注入电压叠加到 Ud 上
-        if(MC.HFI.Dir == 0)
+        // 使能 SQHFI 时，需要将高频注入电压叠加到 Ud 上
+        if(MC.SqHfi.Dir == 0)
         {
-            MC.Foc.Ud = MC.IdPid.Out + MC.HFI.Uin;   // 正向叠加
+            MC.Foc.Ud = MC.IdPid.Out + MC.SqHfi.Uin;   // 正向叠加
         }
         else
         {
-            MC.Foc.Ud = MC.IdPid.Out - MC.HFI.Uin;   // 反向叠加
+            MC.Foc.Ud = MC.IdPid.Out - MC.SqHfi.Uin;   // 反向叠加
         }
     }
     else
     {
-        // 未使能 HFI 时，Ud 仅为 Id 环输出
+        // 未使能 SQHFI 时，Ud 仅为 Id 环输出
         MC.Foc.Ud = MC.IdPid.Out;
     }
 
@@ -985,20 +1012,20 @@ void Strong_Drag_To_Observer_Cal(STRONG_DRAG_TO_OBSERVER *p)
     }
 }
 
-/*HFI（高频注入）与 SMO（滑模观测器）切换逻辑计算*/
-void Hfi_TO_Obsever_Cal(HFI_TO_OBSERVER *p)
+/*SQHFI（高频注入）与 SMO（滑模观测器）切换逻辑计算*/
+void SqHfi_TO_Obsever_Cal(SQHFI_TO_OBSERVER *p)
 {
     // ============================================================================
     // 1. 计算速度绝对值与参考速度绝对值
     // ============================================================================
-    p->HfiEleSpeedAbs = fabsf(p->HfiEleSpeed);     // HFI 估算速度绝对值（rpm）
+    p->SqHfiEleSpeedAbs = fabsf(p->SqHfiEleSpeed);     // SQHFI 估算速度绝对值（rpm）
     p->ObsEleSpeedAbs = fabsf(p->ObsEleSpeed);     // SMO 估算速度绝对值（rpm）
     p->SpeedRefAbs = fabsf(p->SpeedRef);           // 速度参考值绝对值（rpm）
 
     // ============================================================================
     // 2. 计算两种观测器的角度误差（ThetaErr），并处理角度周期边界（标幺值范围0~1）
     // ============================================================================
-    p->ThetaErr = p->HfiTheta - p->ObsTheta;        // HFI 角度 - SMO 角度（标幺值范围0~1）
+    p->ThetaErr = p->SqHfiTheta - p->ObsTheta;        // SQHFI 角度 - SMO 角度（标幺值范围0~1）
     // 若误差超过 0.5f，减去 1 使之落在 [0, 1) 范围
     p->ThetaErr = p->ThetaErr > 0.5f ? p->ThetaErr - 1.0f : p->ThetaErr;
     // 若误差超过 -0.5f，加上 1 使之落在 [0, 1) 范围
@@ -1016,34 +1043,34 @@ void Hfi_TO_Obsever_Cal(HFI_TO_OBSERVER *p)
     // ============================================================================
 
     // ---------- 情况1：速度极低（≤ SpeedMin）或参考速度极低 ----------
-    // 此时必须使用 HFI（因为 SMO 在零/低速下不可靠），强制切换到 HFI 模式
-    if((p->HfiEleSpeedAbs <= p->SpeedMin || p->SpeedRefAbs <= p->SpeedMin))
+    // 此时必须使用 SQHFI（因为 SMO 在零/低速下不可靠），强制切换到 SQHFI 模式
+    if((p->SqHfiEleSpeedAbs <= p->SpeedMin || p->SpeedRefAbs <= p->SpeedMin))
     {
-        MC.HFI.Enable = 1;                      // 使能 HFI
-        p->EleSpeedOut = p->HfiEleSpeed;        // 输出速度 = HFI 估算速度
-        p->ThetaOut = p->HfiTheta;              // 输出角度 = HFI 估算角度
-        p->ObsMode = HFI;                       // 当前观测器模式记录为 HFI
-        MC.HFI.Uin -= 0.0002f;                  // 缓慢减小高频注入电压幅值（降低噪声）
+        MC.SqHfi.Enable = 1;                      // 使能 SQHFI
+        p->EleSpeedOut = p->SqHfiEleSpeed;        // 输出速度 = SQHFI 估算速度
+        p->ThetaOut = p->SqHfiTheta;              // 输出角度 = SQHFI 估算角度
+        p->ObsMode = SQHFI;                       // 当前观测器模式记录为 SQHFI
+        MC.SqHfi.Uin -= 0.0002f;                  // 缓慢减小高频注入电压幅值（降低噪声）
     }
     // ---------- 情况2：中等速度区间（介于 SpeedMin 和 SpeedMax 之间）----------
-    // 此区间为过渡区，根据当前观测器模式（HFI 或 SMO）和角度误差 CheckCnt 决定输出
+    // 此区间为过渡区，根据当前观测器模式（SQHFI 或 SMO）和角度误差 CheckCnt 决定输出
     else if((p->SpeedRefAbs > p->SpeedMin && p->SpeedRefAbs < p->SpeedMax) ||
-            (p->HfiEleSpeedAbs > p->SpeedMin && p->HfiEleSpeedAbs < p->SpeedMax &&
+            (p->SqHfiEleSpeedAbs > p->SpeedMin && p->SqHfiEleSpeedAbs < p->SpeedMax &&
              p->ObsEleSpeedAbs > p->SpeedMin && p->ObsEleSpeedAbs < p->SpeedMax))
     {
-        // ----- 当前模式为 HFI（正在从 HFI 向 SMO 过渡）-----
-        if(p->ObsMode == HFI)
+        // ----- 当前模式为 SQHFI（正在从 SQHFI 向 SMO 过渡）-----
+        if(p->ObsMode == SQHFI)
         {
             if(p->CheckCnt >= 100)              // 角度误差持续很小（收敛），可以切换到 SMO
             {
                 p->EleSpeedOut = p->ObsEleSpeed;    // 输出 SMO 速度
                 p->ThetaOut = p->ObsTheta;          // 输出 SMO 角度
-                MC.HFI.Uin -= 0.0002f;              // 继续减小注入电压
+                MC.SqHfi.Uin -= 0.0002f;              // 继续减小注入电压
             }
-            else if(p->CheckCnt <= 30)          // 角度误差较大，仍使用 HFI
+            else if(p->CheckCnt <= 30)          // 角度误差较大，仍使用 SQHFI
             {
-                p->EleSpeedOut = p->HfiEleSpeed;
-                p->ThetaOut = p->HfiTheta;
+                p->EleSpeedOut = p->SqHfiEleSpeed;
+                p->ThetaOut = p->SqHfiTheta;
             }
             else                                // 中间状态，保持上一周期的输出（平滑过渡）
             {
@@ -1051,20 +1078,20 @@ void Hfi_TO_Obsever_Cal(HFI_TO_OBSERVER *p)
                 p->ThetaOut = p->ThetaOut;
             }
         }
-        // ----- 当前模式为 SMO（正在从 SMO 向 HFI 过渡，例如减速）-----
+        // ----- 当前模式为 SMO（正在从 SMO 向 SQHFI 过渡，例如减速）-----
         else
         {
-            if(p->CheckCnt >= 100)              // 角度误差小，切换到 HFI（准备低速运行）
+            if(p->CheckCnt >= 100)              // 角度误差小，切换到 SQHFI（准备低速运行）
             {
-                p->EleSpeedOut = p->HfiEleSpeed;
-                p->ThetaOut = p->HfiTheta;
-                MC.HFI.Uin -= 0.02f;            // 快速减小注入电压
+                p->EleSpeedOut = p->SqHfiEleSpeed;
+                p->ThetaOut = p->SqHfiTheta;
+                MC.SqHfi.Uin -= 0.02f;            // 快速减小注入电压
             }
             else if(p->CheckCnt <= 30)          // 角度误差大，保持 SMO
             {
                 p->EleSpeedOut = p->ObsEleSpeed;
                 p->ThetaOut = p->ObsTheta;
-                MC.HFI.Uin += 0.02f;            // 增加注入电压（为切换到 HFI 做准备）
+                MC.SqHfi.Uin += 0.02f;            // 增加注入电压（为切换到 SQHFI 做准备）
             }
             else
             {
@@ -1074,36 +1101,36 @@ void Hfi_TO_Obsever_Cal(HFI_TO_OBSERVER *p)
         }
     }
     // ---------- 情况3：高速区间（超过 SpeedMax）----------
-    // 此时 SMO 更可靠，强制使用 SMO，并根据速度条件决定是否禁用 HFI 或调整注入电压
+    // 此时 SMO 更可靠，强制使用 SMO，并根据速度条件决定是否禁用 SQHFI 或调整注入电压
     else
     {
-        // 如果 SMO 速度远高于上限（> SpeedMax + 3*SpeedMid），完全禁用 HFI
+        // 如果 SMO 速度远高于上限（> SpeedMax + 3*SpeedMid），完全禁用 SQHFI
         if(p->ObsEleSpeedAbs > (p->SpeedMax + p->SpeedMid * 3.0f))
         {
-            MC.HFI.Enable = 0;                  // 关闭 HFI，减少计算负担
+            MC.SqHfi.Enable = 0;                  // 关闭 SQHFI，减少计算负担
         }
-        // 如果 SMO 速度回落到略低于上限，重新使能 HFI 并调整注入电压
+        // 如果 SMO 速度回落到略低于上限，重新使能 SQHFI 并调整注入电压
         else if(p->ObsEleSpeedAbs < (p->SpeedMax + p->SpeedMid * 2.5f))
         {
-            MC.HFI.Enable = 1;
+            MC.SqHfi.Enable = 1;
             // 计算速度变化率（用于动态调整注入电压）
             p->SpeedChangeRate = fabsf(p->EleSpeedOut) - fabsf(p->SpeedLast);
             p->SpeedLast = p->EleSpeedOut;
             // 当速度急剧下降（减速变化率绝对值 > 56 rpm/周期），增大注入电压以增强位置跟踪
             if(p->SpeedChangeRate < 0 && fabsf(p->SpeedChangeRate) > 56.0f)
             {
-                MC.HFI.Uin = p->HfiInjectMagMax;    // 设为最大注入电压
+                MC.SqHfi.Uin = p->SqHfiInjectMagMax;    // 设为最大注入电压
             }
             // 当速度平稳或缓慢变化，逐渐减小注入电压
             else if(p->SpeedChangeRate > 0 && fabsf(p->SpeedChangeRate) < 14.0f)
             {
-                MC.HFI.Uin -= 0.0002f;
+                MC.SqHfi.Uin -= 0.0002f;
             }
         }
         else
         {
-            // 保持原有 HFI 使能状态
-            MC.HFI.Enable = MC.HFI.Enable;
+            // 保持原有 SQHFI 使能状态
+            MC.SqHfi.Enable = MC.SqHfi.Enable;
         }
         // 高速下输出 SMO 的速度和角度
         p->EleSpeedOut = p->ObsEleSpeed;
@@ -1114,7 +1141,7 @@ void Hfi_TO_Obsever_Cal(HFI_TO_OBSERVER *p)
     // ============================================================================
     // 5. 限制高频注入电压幅值（Uin）在最小值和最大值之间
     // ============================================================================
-    MC.HFI.Uin = Sat(MC.HFI.Uin, p->HfiInjectMagMin, p->HfiInjectMagMax);
+    MC.SqHfi.Uin = Sat(MC.SqHfi.Uin, p->SqHfiInjectMagMin, p->SqHfiInjectMagMax);
 
     // ============================================================================
     // 6. 限制 CheckCnt 的范围（0 ~ 121）
@@ -1127,4 +1154,192 @@ void Hfi_TO_Obsever_Cal(HFI_TO_OBSERVER *p)
     {
         p->CheckCnt = 0;            // 下限0
     }
+}
+
+// ============================================================================
+// 正弦高频注入（SineHfi）速度-电流双闭环控制
+// 数据流：
+// Clark → 上拍估计角投影得估计Q轴电流 → HFI解调 → HFI_PLL → 电角度 → Park →
+// DQ陷波+LPF → 分频速度环 → 电流环 → Ud叠加注入电压 → IPark → SVPWM）
+// ============================================================================
+void SineHfi_Speed_Current_Loop(void)
+{
+    float Sine, Cosine;
+
+    // ============================================================================
+    // 1. T型加减速处理（速度斜坡）+ HFI低速域限幅
+    // ============================================================================
+    // 高频注入仅在低速域有效（注入频率须远大于电基频），对速度给定限幅。
+    // SpeedMax口径为电rpm，MechanicalSpeedSet为机械rpm，须按极对数折算后限幅
+    // （原实现直接以电rpm数值限机械rpm，7对极下实际速度上限被放大7倍）
+    Amplitude_Limit(&MC.Speed.MechanicalSpeedSet,
+                    -MC.SineHfi.SpeedMax / POLEPAIRS,
+                    MC.SineHfi.SpeedMax / POLEPAIRS);
+    MC.TAccDec.TargetSpeed = MC.Speed.MechanicalSpeedSet;
+    T_Shaped_Acc_Dec(&MC.TAccDec);
+
+    // ============================================================================
+    // 2. 电流采样及Clark变换（本拍Ialpha/Ibeta）
+    // ============================================================================
+    MC.Foc.Iu = MC.Sample.IuReal;
+    MC.Foc.Iv = MC.Sample.IvReal;
+    Clark_Transform(&MC.Foc);            // Iu,Iv -> Ialpha,Ibeta
+
+    // ============================================================================
+    // 3. HFI解调：用上拍估计电角度Re将Ialpha/Ibeta投影到估计Q轴
+    // ============================================================================
+    // 估计Q轴电流 = -Ialpha*sin(Re) + Ibeta*cos(Re)（软件Park，只取q分量）
+    // 【重要】投影、Park/IPark、注入必须用同一个角（Re），保证解调基准与注入轴一致
+    Calculate_Sin_Cos(Value_normalize(MC.SineHfi.Re) * (1.0f / TWO_PI), &Sine, &Cosine);
+    MC.SineHfi.Go.InputQ = MC.Foc.Ibeta * Cosine - MC.Foc.Ialpha * Sine;
+    HFI_Calculate(&MC.SineHfi);          // 带通→解调→陷波→刷新注入信号
+
+    // ============================================================================
+    // 4. HFI锁相环：解调误差→HFI_PLL→机械角/机械角速度→估计电角度
+    // ============================================================================
+    // OutputQ ∝ sin(2Δθ) 为PLL误差；PLL输出OutRe为机械角(rad)、OutWe为机械
+    // 角速度(rad/s)，×极对数得电角度
+    MC.SineHfi.Pll.go.Error = MC.SineHfi.Go.OutputQ;
+    HFI_PLL_Loop(&MC.SineHfi.Pll);
+    MC.SineHfi.Re = Value_normalize(MC.SineHfi.Pll.go.OutRe * POLEPAIRS);
+    MC.SineHfi.ReCtrl = MC.SineHfi.Re;          // 保留字段，供调试通道/Watch观测
+
+    // 观测机械角速度二阶巴特沃斯低通（Wc=100rad/s≈15.9Hz）
+    MC.SineHfi.SpeedLpf.Input = MC.SineHfi.Pll.go.OutWe;
+    Butter_LPF_Calc(&MC.SineHfi.SpeedLpf);
+    MC.SineHfi.SpeedLPF = MC.SineHfi.SpeedLpf.Output;
+
+    // ============================================================================
+    // 5. 速度环（按分频因子执行，反馈为HFI观测电角速度，单位：电rpm）
+    // ============================================================================
+    MC.Speed.SpeedCalculateCnt++;
+    if (MC.Speed.SpeedCalculateCnt >= SPEED_DIVISION_FACTOR)
+    {
+        MC.Speed.SpeedCalculateCnt = 0;
+        MC.SpdPid.Ref = MC.TAccDec.SpeedOut;                            // 目标速度(电rpm)
+        MC.SpdPid.Fbk = MC.SineHfi.SpeedLPF * POLEPAIRS / TWO_PI * 60.0f;   // 机械rad/s→电rpm
+        PID_Control(&MC.SpdPid);
+        MC.IqPid.Ref = MC.SpdPid.Out;                                   // 速度环输出作Iq给定
+        MC.IdPid.Ref = 0.0f;
+    }
+
+    // ============================================================================
+    // 6. Park变换（使用控制角ReCtrl）
+    // ============================================================================
+    Calculate_Sin_Cos(MC.SineHfi.ReCtrl * (1.0f / TWO_PI), &MC.Foc.SinVal, &MC.Foc.CosVal);
+    Park_Transform(&MC.Foc);             // Ialpha,Ibeta -> Id,Iq
+
+    // ============================================================================
+    // 7. DQ轴电流陷波（滤除注入频率分量）+ 一阶低通
+    // ============================================================================
+    MC.SineHfi.Go.InputId = MC.Foc.Id;
+    MC.SineHfi.Go.InputIq = MC.Foc.Iq;
+    HFI_Current_Filter(&MC.SineHfi);
+    MC.Foc.IdLPF = MC.SineHfi.Go.OutputId * MC.Foc.IdLPFFactor + MC.Foc.IdLPF * (1 - MC.Foc.IdLPFFactor);
+    MC.Foc.IqLPF = MC.SineHfi.Go.OutputIq * MC.Foc.IqLPFFactor + MC.Foc.IqLPF * (1 - MC.Foc.IqLPFFactor);
+
+    // ============================================================================
+    // 7.5 极性辨识（NSD）：消除sin(2Δθ)解调固有的180°极性模糊
+    // ============================================================================
+    // NSD期间Id环跟踪辨识脉冲（覆盖速度环的IdRef=0）；辨识要求转子静止，
+    // 封锁转矩电流（速度参考非零时防止极性未知时施加反向转矩）
+    HFI_NSD_Calculate(&MC.SineHfi);          // InputId已在本节赋值，为本拍原始Id
+    if (MC.SineHfi.NSDFlag == 0)
+    {
+        MC.IdPid.Ref = MC.SineHfi.NSDIdRef;  // 施加d轴电流脉冲判断磁极方向
+        MC.IqPid.Ref = 0.0f;
+    }
+    if (MC.SineHfi.NSDOut == 1)
+    {
+        MC.SineHfi.NSDOut = 0;               // 清除标志，只执行一次
+        // 估计电角度+π => PLL机械角+π/极对数（OutRe每拍由HFI_PLL_Loop内
+        // Value_normalize回绕，此处无需手动归一化）
+        MC.SineHfi.Pll.go.OutRe += ONE_PI / POLEPAIRS;
+    }
+
+    // ============================================================================
+    // 8. 电流环PID调节
+    // ============================================================================
+    MC.IqPid.Fbk = MC.Foc.IqLPF;
+    MC.IdPid.Fbk = MC.Foc.IdLPF;
+
+    // ----- 电流环PID + 高频注入电压叠加 -----
+    PID_Control(&MC.IqPid);              // 输出Uq
+    PID_Control(&MC.IdPid);              // 输出Ud
+    MC.Foc.Uq = MC.IqPid.Out;
+    MC.Foc.Ud = MC.IdPid.Out;
+
+    // 叠加高频注入电压到D轴（脉振注入，对应源库Control_VelCur_DOUBLE第9步）
+    MC.Foc.Ud += MC.SineHfi.Go.OutputUin;
+
+    // ============================================================================
+    // 10. 反Park变换与SVPWM调制
+    // ============================================================================
+    IPark_Transform(&MC.Foc);            // Ud,Uq -> Ualpha,Ubeta（与Park同角度）
+    MC.Foc.Ubus = MC.Sample.BusReal;
+    Calculate_SVPWM(&MC.Foc);
+
+    // 机械转速用于显示（机械rad/s→机械rpm）
+    MC.Speed.MechanicalSpeed = MC.SineHfi.SpeedLPF / TWO_PI * 60.0f;
+}
+
+// ============================================================================
+// 正弦高频注入（SineHfi）自检模式
+// 仅注入+解调+Id偏置电流闭环，不闭环、不运行PLL（Re固定为0）
+// 用途：上电验证电机磁饱和凸极性是否可用于HFI（SPMSM适用性自检）
+//   DebugIdBias = 0  ：仅高频注入。手转转子，OutputQ应随电角度呈2倍频正弦变化，
+//                      有信号说明凸极性可解调，无信号说明凸极性不足
+//   DebugIdBias > 0  ：A相轴（Re=0）直流电流闭环，转子会自行对齐A相轴。
+//                      手转转子对比有无偏置时OutputQ的包络幅值：
+//                      加偏置后幅值明显增大 => 饱和凸极性需要电流激发；
+//                      幅值基本不变       => 磁钢自身饱和已提供凸极性
+// ============================================================================
+void SineHfi_Debug_Injection_Loop(void)
+{
+    float Sine, Cosine;
+
+    // ============================================================================
+    // 1. 电流采样及Clark变换
+    // ============================================================================
+    MC.Foc.Iu = MC.Sample.IuReal;
+    MC.Foc.Iv = MC.Sample.IvReal;
+    Clark_Transform(&MC.Foc);
+
+    // ============================================================================
+    // 2. HFI解调（自检模式注入轴固定在Re=0，即A相轴）
+    // ============================================================================
+    Calculate_Sin_Cos(Value_normalize(MC.SineHfi.Re) * (1.0f / TWO_PI), &Sine, &Cosine);
+    MC.SineHfi.Go.InputQ = MC.Foc.Ibeta * Cosine - MC.Foc.Ialpha * Sine;
+    HFI_Calculate(&MC.SineHfi);          // 带通→解调→陷波→刷新注入信号
+    // 注：自检模式不运行PLL，Re保持0，注入轴静止，便于观察OutputQ与转子位置关系
+
+    // ============================================================================
+    // 3. Park变换（Re=0，A相轴为d轴），得到实际Id/Iq
+    // ============================================================================
+    MC.Foc.SinVal = Sine;                // IPark与注入用同一角度
+    MC.Foc.CosVal = Cosine;
+    Park_Transform(&MC.Foc);             // Ialpha,Ibeta -> Id,Iq
+
+    // ============================================================================
+    // 4. Id偏置电流闭环（磁饱和凸极性检测，给定值MC.SineHfi.DebugIdBias）
+    // ============================================================================
+    // 先DQ轴陷波滤除注入频率分量，再一阶低通，避免PI响应高频电流导致误调节
+    MC.SineHfi.Go.InputId = MC.Foc.Id;
+    MC.SineHfi.Go.InputIq = MC.Foc.Iq;
+    HFI_Current_Filter(&MC.SineHfi);
+    MC.Foc.IdLPF = MC.SineHfi.Go.OutputId * MC.Foc.IdLPFFactor + MC.Foc.IdLPF * (1 - MC.Foc.IdLPFFactor);
+    MC.Foc.IqLPF = MC.SineHfi.Go.OutputIq * MC.Foc.IqLPFFactor + MC.Foc.IqLPF * (1 - MC.Foc.IqLPFFactor);
+
+    MC.IdPid.Ref = MC.SineHfi.DebugIdBias;   // Id偏置给定(A)，0=关闭偏置
+    MC.IdPid.Fbk = MC.Foc.IdLPF;             // 反馈为陷波+低通后的基频Id
+    PID_Control(&MC.IdPid);                  // Id闭环，输出偏置电压
+
+    // ============================================================================
+    // 5. 注入轴（A相轴）叠加高频注入电压 + Id偏置闭环电压
+    // ============================================================================
+    MC.Foc.Ud = MC.SineHfi.Go.OutputUin + MC.IdPid.Out;
+    MC.Foc.Uq = 0.0f;
+    IPark_Transform(&MC.Foc);
+    MC.Foc.Ubus = MC.Sample.BusReal;
+    Calculate_SVPWM(&MC.Foc);
 }

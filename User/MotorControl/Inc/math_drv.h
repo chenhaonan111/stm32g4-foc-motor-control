@@ -9,4 +9,7 @@ void Calculate_Sin_Cos(float angle, float *sinval, float *cosval);
 /* 幅值限幅:把 *input 限制在 [min, max] */
 void Amplitude_Limit(float *input, float min, float max);
 
+/* 角度归一化到 [0, 2π) (正弦HFI/PLL用) */
+float Value_normalize(float angle);
+
 #endif

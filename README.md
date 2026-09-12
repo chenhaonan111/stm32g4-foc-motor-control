@@ -1,8 +1,8 @@
 # STM32 FOC Brushless Motor Control / STM32 无刷电机磁场定向控制
 
-A field-oriented control (FOC) firmware for PMSM/BLDC motors on STM32G4, supporting both **sensored (encoder)** and **sensorless** (SMO back-EMF observer + HFI high-frequency injection) operation with current / speed / position cascaded loops.
+A field-oriented control (FOC) firmware for PMSM/BLDC motors on STM32G4, supporting both **sensored (encoder)** and **sensorless** (SMO back-EMF observer + square-wave / sine-wave high-frequency injection) operation with current / speed / position cascaded loops. The sine-wave HFI is **work in progress (debugging stage)**.
 
-基于 STM32G4 的 PMSM/BLDC 磁场定向控制(FOC)固件,支持**有感(编码器)**与**无感**(SMO 反电势观测器 + HFI 高频注入)两种方式,包含电流 / 速度 / 位置三环级联控制。
+基于 STM32G4 的 PMSM/BLDC 磁场定向控制(FOC)固件,支持**有感(编码器)**与**无感**(SMO 反电势观测器 + 方波/正弦高频注入)两种方式,包含电流 / 速度 / 位置三环级联控制。正弦高频注入(SineHfi)目前处于**调试阶段**。
 
 ---
 
@@ -12,9 +12,11 @@ A field-oriented control (FOC) firmware for PMSM/BLDC motors on STM32G4, support
 - **有感控制**:基于 TIM3 增量式编码器,实现电流环、速度环、位置环(三环级联)。
 - **无感控制**:
   - **SMO 滑模观测器**:基于反电势观测 + SPLL 锁相环提取电角度与转速,适用于中高速。
-  - **HFI 高频注入**:利用磁饱和诱导凸极性,低速区通过高频电压注入 + 异差解调 + NSD(南北极检测)消除 2θ 歧义,提取转子角度。
+  - **SQHFI 方波高频注入**:利用磁饱和诱导凸极性,低速区通过高频电压注入 + 包络解调 + NSD(南北极检测)消除 2θ 歧义,提取转子角度。
+  - **SineHfi 正弦高频注入**(调试阶段):脉振正弦注入 + 带通/陷波滤波解调 + 标量误差锁相环 + NSD 极性辨识,面向低速更平滑的角度跟踪;角度稳定性与电流环参数整定进行中。
   - **强拖启动**:开环/闭环强拖将电机拉至观测器可工作转速后切入闭环。
-- **HFI + SMO 混合无感**:低速走 HFI、高速走 SMO,按转速区间自动平滑切换。
+- **SQHFI + SMO 混合无感**:低速走 SQHFI、高速走 SMO,按转速区间自动平滑切换。
+- **死区补偿**:按相电流极性对 PWM 占空比叠加死区电压补偿,改善低速电压线性度。
 - **保护机制**:母线过压 / 欠压、相电流过流检测,故障态硬件关断驱动使能。
 - **参数在线辨识**:上电自动辨识定子电阻 Rs、电感 Ld/Lq、编码器零点偏移。
 - **调试**:USART1 + DMA 经 VOFA+(JUST_FLOAT 协议)实时上传观测波形。
@@ -39,10 +41,12 @@ A field-oriented control (FOC) firmware for PMSM/BLDC motors on STM32G4, support
 | 强拖开环 Strong Drag Open | `0x05` | 无感 | 开环电压强拖启动 |
 | 强拖闭环 Strong Drag Close | `0x06` | 无感 | 强拖 + 电流闭环 |
 | 强拖切 SMO 速度电流 | `0x07` | 无感 | 强拖启动 → SMO 观测 → 速度电流闭环 |
-| HFI 电流闭环 HFI Current | `0x08` | 无感 | 高频注入,测试角度收敛 |
-| HFI 速度电流 HFI Speed | `0x09` | 无感 | HFI + 速度电流闭环 |
-| HFI 位置速度电流 | `0x0A` | 无感 | 预留(reserved,未实现) |
-| HFI + SMO 混合 | `0x0B` | 无感 | 低速 HFI / 高速 SMO 自动切换 |
+| SQHFI 电流闭环 SQHFI Current | `0x08` | 无感 | 方波高频注入,测试角度收敛 |
+| SQHFI 速度电流 SQHFI Speed | `0x09` | 无感 | 方波 HFI + 速度电流闭环 |
+| SQHFI 位置速度电流 | `0x0A` | 无感 | 预留(reserved,未实现) |
+| SQHFI + SMO 混合 | `0x0B` | 无感 | 低速 SQHFI / 高速 SMO 自动切换 |
+| SineHfi 速度电流 | `0x0C` | 无感 | 正弦 HFI + NSD 极性辨识 + 速度电流闭环(**调试中**) |
+| SineHfi 自检 | `0x0D` | 无感 | 仅注入+解调,验证凸极性可观测性(**调试中**) |
 
 > 速度环量纲说明:内部统一使用电气 rpm(机械 rpm × 极对数);强拖切闭环阈值(4200 / 3000 / 2000)均为电气 rpm。
 
@@ -101,6 +105,7 @@ FOCProject/
 
 ## 状态 / Status
 
-代码开发完成,各模式功能均已实现;硬件实测调试进行中。
+- 有感各模式、强拖启动、SMO、SQHFI 方波高频注入:开发完成,硬件实测调试进行中。
+- **SineHfi 正弦高频注入(`0x0C`/`0x0D`):仍在调试阶段**——角度跟踪稳定性与电流环参数整定尚未完成,上电默认 `RunMode` 即 `SINEHFI_SPEED_CURRENT_CLOSE`,复现/二次开发请知悉。
 
 <img width="712" height="1200" alt="tb_image_share_1756172024298 jpg" src="https://github.com/user-attachments/assets/2857582e-6939-4cb3-91bd-c05203740ea8" />
