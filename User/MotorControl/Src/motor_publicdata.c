@@ -144,7 +144,7 @@ void Motor_Struct_Init(void)
 
     // SineHfi专用标量误差锁相环（跟踪机械角度/机械角速度；与上方HPLL正交锁相环是不同结构）
     MC.SineHfi.Pll.T = TS;
-    MC.SineHfi.Pll.Kp = 650.0f;           // PLL比例增益（跟踪机械角，电角度=OutRe×极对数）
+    MC.SineHfi.Pll.Kp = 650.0f;           // PLL比例增益（跟踪机械角，电角度=OutThetaM×极对数）
     MC.SineHfi.Pll.Ki = 210000.0f;
     HFI_PLL_Init(&MC.SineHfi.Pll);
 

@@ -55,7 +55,7 @@ typedef struct
     float K2;                   // 陷波滤波器分子阻尼比（0=理想深陷波）
     float Zeta;                 // 带通滤波器阻尼比（越小选频性越强）
 
-    HFI_PLL_STRUCT Pll;         // 标量误差锁相环（跟踪机械角/机械角速度，电角度=OutRe×极对数）
+    HFI_PLL_STRUCT Pll;         // 标量误差锁相环（跟踪机械角/机械角速度，电角度=OutThetaM×极对数）
     float Re;                   // 【估计电角度】PLL输出机械角×极对数。投影、Park/IPark、
                                 //   注入三坐标系统一用此角，保证解调基准与注入轴一致
                                 //   （勿拆分为双角度，见调用处注释）

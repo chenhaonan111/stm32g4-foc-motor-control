@@ -1197,15 +1197,15 @@ void SineHfi_Speed_Current_Loop(void)
     // ============================================================================
     // 4. HFI锁相环：解调误差→HFI_PLL→机械角/机械角速度→估计电角度
     // ============================================================================
-    // OutputQ ∝ sin(2Δθ) 为PLL误差；PLL输出OutRe为机械角(rad)、OutWe为机械
+    // OutputQ ∝ sin(2Δθ) 为PLL误差；PLL输出OutThetaM为机械角(rad)、OutWm为机械
     // 角速度(rad/s)，×极对数得电角度
     MC.SineHfi.Pll.go.Error = MC.SineHfi.Go.OutputQ;
     HFI_PLL_Loop(&MC.SineHfi.Pll);
-    MC.SineHfi.Re = Value_normalize(MC.SineHfi.Pll.go.OutRe * POLEPAIRS);
+    MC.SineHfi.Re = Value_normalize(MC.SineHfi.Pll.go.OutThetaM * POLEPAIRS);
     MC.SineHfi.ReCtrl = MC.SineHfi.Re;          // 保留字段，供调试通道/Watch观测
 
     // 观测机械角速度二阶巴特沃斯低通（Wc=100rad/s≈15.9Hz）
-    MC.SineHfi.SpeedLpf.Input = MC.SineHfi.Pll.go.OutWe;
+    MC.SineHfi.SpeedLpf.Input = MC.SineHfi.Pll.go.OutWm;
     Butter_LPF_Calc(&MC.SineHfi.SpeedLpf);
     MC.SineHfi.SpeedLPF = MC.SineHfi.SpeedLpf.Output;
 
@@ -1252,9 +1252,9 @@ void SineHfi_Speed_Current_Loop(void)
     if (MC.SineHfi.NSDOut == 1)
     {
         MC.SineHfi.NSDOut = 0;               // 清除标志，只执行一次
-        // 估计电角度+π => PLL机械角+π/极对数（OutRe每拍由HFI_PLL_Loop内
+        // 估计电角度+π => PLL机械角+π/极对数（OutThetaM每拍由HFI_PLL_Loop内
         // Value_normalize回绕，此处无需手动归一化）
-        MC.SineHfi.Pll.go.OutRe += ONE_PI / POLEPAIRS;
+        MC.SineHfi.Pll.go.OutThetaM += ONE_PI / POLEPAIRS;
     }
 
     // ============================================================================
