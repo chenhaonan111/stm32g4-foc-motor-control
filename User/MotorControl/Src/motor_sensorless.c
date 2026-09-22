@@ -69,8 +69,7 @@ void Sensorless_Control()
         // --------------------------------------------------------------------
         // 模式5: 高频注入（SQHFI）速度电流闭环（SQHFI_SPEED_CURRENT_CLOSE）
         // --------------------------------------------------------------------
-        // 说明: 在 SQHFI 基础上增加速度外环，实现速度闭环控制。但由于 SQHFI 本身依赖注入信号，
-        //       响应带宽有限，通常只能用于较低转速（例如针对4006无刷电机限速2500rpm）。
+        // 说明: 在 SQHFI 基础上增加速度外环，实现速度闭环控制。
         //       适合零速到中低速的无传感器速度控制。
         case SQHFI_SPEED_CURRENT_CLOSE:
         {
@@ -1204,7 +1203,7 @@ void SineHfi_Speed_Current_Loop(void)
     MC.SineHfi.Re = Value_normalize(MC.SineHfi.Pll.go.OutThetaM * POLEPAIRS);
     MC.SineHfi.ReCtrl = MC.SineHfi.Re;          // 保留字段，供调试通道/Watch观测
 
-    // 观测机械角速度二阶巴特沃斯低通（Wc=100rad/s≈15.9Hz）
+    // 观测机械角速度二阶巴特沃斯低通
     MC.SineHfi.SpeedLpf.Input = MC.SineHfi.Pll.go.OutWm;
     Butter_LPF_Calc(&MC.SineHfi.SpeedLpf);
     MC.SineHfi.SpeedLPF = MC.SineHfi.SpeedLpf.Output;

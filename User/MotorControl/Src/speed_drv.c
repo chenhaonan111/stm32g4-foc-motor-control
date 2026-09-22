@@ -40,7 +40,7 @@ void Calculate_Speed(SPEED_STRUCT *p)
     p->ElectricalSpeedRaw = p->ElectricalPosChange * p->ElectricalSpeedFactor;
 
     // ------------------------------------------------------------------------
-    // 4. 二阶巴特沃斯低通滤波（减小速度噪声，-40dB/dec）
+    // 4. 二阶巴特沃斯低通滤波（减小速度噪声）
     // ------------------------------------------------------------------------
     // Butter_LPF_Calc 内部执行二阶差分方程，结果写入 Output
     p->ButterLPF.Input = p->ElectricalSpeedRaw;

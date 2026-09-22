@@ -16,7 +16,7 @@ void Motor_Struct_Init(void)
     MC.Motor.ErrorCode = NONE_ERR;
     // RunMode: 电机运行时的控制模式，SINEHFI_SPEED_CURRENT_CLOSE 表示正弦HFI速度电流闭环
     //          （上电先自动执行一次NSD极性辨识，完成后速度环接管，电位器给速度）
-    MC.Motor.RunMode = SINEHFI_SPEED_CURRENT_CLOSE;
+    MC.Motor.RunMode = SPEED_CURRENT_LOOP;
 
     // DutyCycle: 三相占空比初值 = ARR(0%占空比,000零矢量,下管全开安全态)
     MC.Foc.DutyCycleA = PWM_CYCLE / 2;
@@ -52,9 +52,6 @@ void Motor_Struct_Init(void)
     // ============================================================================
     // IdLPFFactor / IqLPFFactor: d/q轴电流低通滤波系数（一阶滤波α值，0~1）
     //                             0.1表示滤波效果较强，响应稍慢
-    //                             （曾试0.79（等效截止≈5kHz）提高反馈带宽，但在SineHfi
-    //                               陷波反馈路径下电流环穿越频率落入Wo陷波相位谷导致
-    //                               裕度崩溃，已回退。调整须与电流环增益联动仿真复核）
     MC.Foc.IdLPFFactor = 0.1f;
     MC.Foc.IqLPFFactor = 0.1f;
     // PwmCycle: PWM周期（通常为定时器的自动重装载值），用于计算占空比
@@ -90,7 +87,7 @@ void Motor_Struct_Init(void)
     MC.Speed.ElectricalSpeedFactor = (1.0f / (TS * SPEED_DIVISION_FACTOR)) * 60.0f;
 
     // 二阶巴特沃斯速度滤波参数：Calculate_Speed 按速度环分频周期执行
-    MC.Speed.ButterLPF.Wc = 628.0f;        // 100Hz，速度环带宽(典型5~50Hz)的5~10倍
+    MC.Speed.ButterLPF.Wc = 628.0f;        // 截止频率100Hz
     MC.Speed.ButterLPF.Ts = TS * SPEED_DIVISION_FACTOR;   // 速度环周期 = 电流环周期 × 分频系数
     Butter_LPF_Init(&MC.Speed.ButterLPF);
 
@@ -149,7 +146,7 @@ void Motor_Struct_Init(void)
     HFI_PLL_Init(&MC.SineHfi.Pll);
 
     MC.SineHfi.Re = 0.0f;                 // 估计电角度初值
-    // 观测速度二阶巴特沃斯低通（Wc=100rad/s≈15.9Hz，ζ=1/√2）
+    // 观测速度二阶巴特沃斯低通
     // 本滤波在20kHz电流环中断内每拍执行一次，故 Ts = TS
     MC.SineHfi.SpeedLpf.Wc = 100.0f;      // 截止角频率(rad/s)
     MC.SineHfi.SpeedLpf.Ts = TS;          // 执行周期 = 电流环周期
@@ -210,13 +207,6 @@ void Motor_Struct_Init(void)
     
     // ============================================================================
     // 15. 电流环PID参数（Iq、Id环）
-    //     【整定记录】曾试Kp=0.3082/Ki=0.0566+α=0.79反馈滤波，实机反而失稳：
-    //     SineHfi模式电流反馈路径含Wo=1091Hz陷波器，在700~1500Hz形成相位谷，
-    //     该组增益使电流环穿越频率(~763Hz)落入相位谷，裕度不足(仿真PM仅28°)，
-    //     叠加实际延迟后失稳，已回退。有感/强拖路径(反馈无陷波器)可用的增益
-    //     不可直接用于SineHfi路径。
-    //     后续整定应按辨识实测Ls/Rs做极点对消：Kp=Ls*ωc、Ki(每拍)=Rs*ωc*TS，
-    //     ωc取2π×300Hz左右（穿越须远离陷波相位谷），并仿真复核SineHfi路径裕度。
     // ============================================================================
     MC.IqPid.Kp = 0.2f;                     // 比例系数(V/A)
     MC.IqPid.Ki = 0.002f;                   // 积分系数(每拍累加口径)
