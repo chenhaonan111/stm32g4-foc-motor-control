@@ -36,15 +36,10 @@ void Usart_Task(void)
         { 
             if (__HAL_DMA_GET_COUNTER(&hdma_usart1_tx) == 0) 
             {              
-                /* SineHfi speed loop test view (VOFA+ 4 channels):
-                   CH1 speed ref (e-rpm, T-acc/dec ramp output)
-                   CH2 speed fbk (e-rpm, HFI observed = SpdPid.Fbk)
-                   CH3 HFI estimated electrical angle (PU 0~1)
-                   CH4 encoder measured electrical angle (PU 0~1) */
-                TxData.fdata[0] = MC.TAccDec.SpeedOut;
-                TxData.fdata[1] = MC.SpdPid.Fbk;
-                TxData.fdata[2] = MC.SineHfi.ReCtrl / TWO_PI;
-                TxData.fdata[3] = MC.EAngle.ElectricalAnglePU;
+                TxData.fdata[0] = MC.Foc.Id;
+                TxData.fdata[1] = MC.IdPid.Ref;
+                TxData.fdata[2] = 0;
+                TxData.fdata[3] = 0;
 
                 __HAL_DMA_DISABLE(&hdma_usart1_tx);
                 HAL_UART_Transmit_DMA(&huart1, (uint8_t *)&TxData, sizeof(TxData));

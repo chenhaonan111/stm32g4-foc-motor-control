@@ -1,4 +1,5 @@
 #include "eangle_drv.h"
+#include "motor_publicdata.h"
 
 /*电角度发生器(开环模式)*/
 void Electrical_Angle_Generator(E_ANGLE_STRUCT *p)
@@ -52,6 +53,32 @@ void Calculate_Encoder_Data(E_ANGLE_STRUCT *p)
     // 4. 计算电角度标幺值
     // ------------------------------------------------------------------------
     p->ElectricalAnglePU = (float)ElectricalVal / (float)p->EncoderValMax;
+}
+
+/*编码器锁相环测速(每拍20kHz执行,勿放分频环)*/
+void Calculate_Encoder_Pll(E_ANGLE_STRUCT *p)
+{
+//    if(p->Dir)
+//    {
+//        p->EncoderVal = p->EncoderValMax - p->EncoderVal;
+//    }
+
+    float temp1 = (float)(p->EncoderVal - p->CalibOffset) / (ENCODER_LINE * 4) * TWO_PI;
+
+    if(temp1 < 0.0f) temp1 += TWO_PI;
+    if(temp1 > TWO_PI) temp1 -= TWO_PI;
+
+    float temp2 = temp1 - p->EPll.go.OutThetaM;
+
+    if(temp2 > ONE_PI) temp2 -= TWO_PI;
+    if(temp2 < -ONE_PI) temp2 += TWO_PI;
+
+    p->EPll.go.Error = temp2;
+
+    ENC_PLL_Loop(&p->EPll);
+    float rpm_raw = p->EPll.go.OutWm * (60.0f / TWO_PI) * p->PolePairs;
+
+    p->EncSpeedElecRPM = rpm_raw;
 }
 
 

@@ -83,7 +83,8 @@ void Motor_System_Run(void)
         /* ----- 状态3：有感控制（基于编码器传感器） ----- */
         case MOTOR_SENSORUSE:
         {
-            Calculate_Encoder_Data(&MC.EAngle);    // 读取编码器并计算电角度、速度
+            Calculate_Encoder_Data(&MC.EAngle);    // 读取编码器并计算电角度
+            Calculate_Encoder_Pll(&MC.EAngle);     // 编码器锁相环测速(每拍20kHz执行,勿放分频环)
             Sensoruse_Control();                    // 执行有感 FOC 控制（电流环/速度环/位置环）
         }
         break;

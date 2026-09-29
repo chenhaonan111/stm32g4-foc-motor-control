@@ -107,21 +107,21 @@ void Current_Close_Loop(void)
     //   Iq = -Ialpha*sin(theta) + Ibeta*cos(theta)
     Park_Transform(&MC.Foc);
 
-    // ------------------------------------------------------------------------
-    // 4. 对Id和Iq进行低通滤波（一阶低通滤波，减小噪声干扰）
-    // ------------------------------------------------------------------------
-    // 一阶低通滤波公式：Y(n) = X(n)*α + Y(n-1)*(1-α)
-    // 其中α为滤波系数（0~1之间），越接近1响应越快但滤波效果越差。
-    // IdLPFFactor 和 IqLPFFactor 是预设的滤波系数。
-    // 滤波后的值存储在 IdLPF / IqLPF 中，用于后续PID反馈。
-    MC.Foc.IdLPF = MC.Foc.Id * MC.Foc.IdLPFFactor + MC.Foc.IdLPF * (1 - MC.Foc.IdLPFFactor);
-    MC.Foc.IqLPF = MC.Foc.Iq * MC.Foc.IqLPFFactor + MC.Foc.IqLPF * (1 - MC.Foc.IqLPFFactor);
+//    // ------------------------------------------------------------------------
+//    // 4. 对Id和Iq进行低通滤波（一阶低通滤波，减小噪声干扰）
+//    // ------------------------------------------------------------------------
+//    // 一阶低通滤波公式：Y(n) = X(n)*α + Y(n-1)*(1-α)
+//    // 其中α为滤波系数（0~1之间），越接近1响应越快但滤波效果越差。
+//    // IdLPFFactor 和 IqLPFFactor 是预设的滤波系数。
+//    // 滤波后的值存储在 IdLPF / IqLPF 中，用于后续PID反馈。
+//    MC.Foc.IdLPF = MC.Foc.Id * MC.Foc.IdLPFFactor + MC.Foc.IdLPF * (1 - MC.Foc.IdLPFFactor);
+//    MC.Foc.IqLPF = MC.Foc.Iq * MC.Foc.IqLPFFactor + MC.Foc.IqLPF * (1 - MC.Foc.IqLPFFactor);
 
     // ------------------------------------------------------------------------
     // 5. 设置PID控制器的反馈值（使用滤波后的Id/Iq）
     // ------------------------------------------------------------------------
-    MC.IqPid.Fbk = MC.Foc.IqLPF;   // Iq环反馈
-    MC.IdPid.Fbk = MC.Foc.IdLPF;   // Id环反馈
+    MC.IqPid.Fbk = MC.Foc.Iq;   // Iq环反馈
+    MC.IdPid.Fbk = MC.Foc.Id;   // Id环反馈
 
     // ------------------------------------------------------------------------
     // 6. 执行PID控制（比例-积分调节），输出Ud、Uq（旋转坐标系下的电压指令）
@@ -193,16 +193,16 @@ void Speed_Current_Loop(void)
 
         /* 3.1 获取当前电角度（用于计算速度） */
         // ElectricalPosThis 存储当前电角度（标幺值，范围通常0~1）
-        MC.Speed.ElectricalPosThis = MC.EAngle.ElectricalAnglePU;
+//        MC.Speed.ElectricalPosThis = MC.EAngle.ElectricalAnglePU;
 
         /* 3.2 计算电机转速 */
         // Calculate_Speed 根据当前电角度和上次保存的电角度之差，以及两次采样的时间间隔，
         // 计算出电角速度（单位：rad/s 或 rpm）。内部会进行滤波处理得到 ElectricalSpeedLPF。
-        Calculate_Speed(&MC.Speed);
+//        Calculate_Speed(&MC.Speed);
 
         /* 3.3 设置速度环PID的参考值和反馈值 */
         MC.SpdPid.Ref = MC.TAccDec.SpeedOut;                  // 目标速度（来自T型加减速输出）
-        MC.SpdPid.Fbk = MC.Speed.ElectricalSpeedLPF;         // 反馈速度（滤波后的电角速度）
+        MC.SpdPid.Fbk = MC.EAngle.EncSpeedElecRPM;            // 反馈速度（PLL输出的电角速度rpm）
         if(MC.SpdPid.Fbk > -2000 && MC.SpdPid.Fbk < 2000) 
         {
             MC.SpdPid.Kp = MC.SpdPid.KpMax;
@@ -242,19 +242,19 @@ void Speed_Current_Loop(void)
     // 需要当前转子电角度（通常来自编码器、霍尔或观测器），将交流量变换为直流量。
     Park_Transform(&MC.Foc);
 
-    // ------------------------------------------------------------------------
-    // 7. Id/Iq 低通滤波（一阶滤波，抑制采样噪声）
-    // ------------------------------------------------------------------------
-    // 滤波公式：Y(n) = X(n)*α + Y(n-1)*(1-α)
-    // α 为滤波系数（IdLPFFactor / IqLPFFactor），越接近1响应越快但滤波效果越弱。
-    MC.Foc.IdLPF = MC.Foc.Id * MC.Foc.IdLPFFactor + MC.Foc.IdLPF * (1 - MC.Foc.IdLPFFactor);
-    MC.Foc.IqLPF = MC.Foc.Iq * MC.Foc.IqLPFFactor + MC.Foc.IqLPF * (1 - MC.Foc.IqLPFFactor);
+//    // ------------------------------------------------------------------------
+//    // 7. Id/Iq 低通滤波（一阶滤波，抑制采样噪声）
+//    // ------------------------------------------------------------------------
+//    // 滤波公式：Y(n) = X(n)*α + Y(n-1)*(1-α)
+//    // α 为滤波系数（IdLPFFactor / IqLPFFactor），越接近1响应越快但滤波效果越弱。
+//    MC.Foc.IdLPF = MC.Foc.Id * MC.Foc.IdLPFFactor + MC.Foc.IdLPF * (1 - MC.Foc.IdLPFFactor);
+//    MC.Foc.IqLPF = MC.Foc.Iq * MC.Foc.IqLPFFactor + MC.Foc.IqLPF * (1 - MC.Foc.IqLPFFactor);
 
     // ------------------------------------------------------------------------
     // 8. 设置电流环PID的反馈值（使用滤波后的Id/Iq）
     // ------------------------------------------------------------------------
-    MC.IqPid.Fbk = MC.Foc.IqLPF;   // Iq环反馈（转矩电流）
-    MC.IdPid.Fbk = MC.Foc.IdLPF;   // Id环反馈（励磁电流）
+    MC.IqPid.Fbk = MC.Foc.Iq;   // Iq环反馈（转矩电流）
+    MC.IdPid.Fbk = MC.Foc.Id;   // Id环反馈（励磁电流）
 
     // ------------------------------------------------------------------------
     // 9. 执行电流环PID调节（内环，每个周期都执行）
@@ -336,16 +336,14 @@ void Pos_Speed_Current_Loop(void)
         MC.Speed.SpeedCalculateCnt = 0;            // 计数器清零
 
         /* 2.1 获取当前电角度（用于速度计算） */
-        MC.Speed.ElectricalPosThis = MC.EAngle.ElectricalAnglePU;    // 电角度标幺值（0~1）
+//        MC.Speed.ElectricalPosThis = MC.EAngle.ElectricalAnglePU;    // 电角度标幺值（0~1）
 
         /* 2.2 计算电机转速 */
-        // Calculate_Speed 根据当前电角度和上次保存的电角度之差，结合采样时间间隔，
-        // 计算出电角速度，结果存放在 ElectricalSpeed 中，并经低通滤波得到 ElectricalSpeedLPF
-        Calculate_Speed(&MC.Speed);
+//        Calculate_Speed(&MC.Speed);
 
         /* 2.3 设置速度环PID的参考值和反馈值 */
         MC.SpdPid.Ref = MC.PosPid.Out;                               // 目标速度来自位置环的输出
-        MC.SpdPid.Fbk = MC.Speed.ElectricalSpeedLPF;                 // 反馈速度（滤波后的电角速度）
+        MC.SpdPid.Fbk = MC.EAngle.EncSpeedElecRPM;                   // 反馈速度（PLL输出的电角速度rpm）
                 if(MC.SpdPid.Fbk > -2000 && MC.SpdPid.Fbk < 2000) 
                 {
                     MC.SpdPid.Kp = MC.SpdPid.KpMax;
@@ -383,18 +381,18 @@ void Pos_Speed_Current_Loop(void)
     // 需要当前转子电角度（从编码器/霍尔/观测器获取），将交流量变为直流量
     Park_Transform(&MC.Foc);
 
-    // ------------------------------------------------------------------------
-    // 6. Id/Iq 低通滤波（一阶低通滤波，抑制采样噪声）
-    // ------------------------------------------------------------------------
-    // 滤波公式：Y(n) = X(n)*α + Y(n-1)*(1-α)
-    MC.Foc.IdLPF = MC.Foc.Id * MC.Foc.IdLPFFactor + MC.Foc.IdLPF * (1 - MC.Foc.IdLPFFactor);
-    MC.Foc.IqLPF = MC.Foc.Iq * MC.Foc.IqLPFFactor + MC.Foc.IqLPF * (1 - MC.Foc.IqLPFFactor);
+//    // ------------------------------------------------------------------------
+//    // 6. Id/Iq 低通滤波（一阶低通滤波，抑制采样噪声）
+//    // ------------------------------------------------------------------------
+//    // 滤波公式：Y(n) = X(n)*α + Y(n-1)*(1-α)
+//    MC.Foc.IdLPF = MC.Foc.Id * MC.Foc.IdLPFFactor + MC.Foc.IdLPF * (1 - MC.Foc.IdLPFFactor);
+//    MC.Foc.IqLPF = MC.Foc.Iq * MC.Foc.IqLPFFactor + MC.Foc.IqLPF * (1 - MC.Foc.IqLPFFactor);
 
     // ------------------------------------------------------------------------
     // 7. 设置电流环PID的反馈值（使用滤波后的Id/Iq）
     // ------------------------------------------------------------------------
-    MC.IqPid.Fbk = MC.Foc.IqLPF;            // Iq环反馈（转矩电流）
-    MC.IdPid.Fbk = MC.Foc.IdLPF;            // Id环反馈（励磁电流，通常目标为0）
+    MC.IqPid.Fbk = MC.Foc.Iq;            // Iq环反馈（转矩电流）
+    MC.IdPid.Fbk = MC.Foc.Id;            // Id环反馈（励磁电流，通常目标为0）
 
     // ------------------------------------------------------------------------
     // 8. 执行电流环PID调节（内环，每个周期都执行，保证电流快速响应）

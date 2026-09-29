@@ -64,5 +64,36 @@ typedef struct{
 void HFI_PLL_Init(HFI_PLL_STRUCT *pll);
 void HFI_PLL_Loop(HFI_PLL_STRUCT *pll);
 
+/* ============================================================================
+ * 编码器角度跟踪锁相环
+ * 与上方HFI_PLL的区别：跟踪对象为编码器机械角(经零偏/方向校正后)，
+ * 鉴相器在外部完成(编码器机械角-估计角,回卷[-π,π)后送入go.Error)，
+ * 内部为PI(Tustin离散)+梯形积分，跟踪机械角度/机械角速度
+ * ==========================================================================*/
+typedef struct{
+    float ErrPrev;          // (数据)上一拍误差 e[k-1]
+    float WmPrev;           // (数据)上一拍角速度输出 ωm[k-1]
+    float PiNum[2];         // (中间量)Tustin离散PI分子系数 [0]=Kp+Ki*T/2, [1]=-Kp+Ki*T/2
+    float IntegCoeff;       // (中间量)梯形积分系数(T/2)
+
+    float Error;            // (输入数据)角度误差输入(rad, 编码器: θm-OutThetaM, 已归一到[-π,π))
+    float OutWm;            // (输出数据)机械角速度输出(rad/s)
+    float OutThetaM;        // (输出数据)机械角度输出(rad), ×PolePairs得电角度
+}PLL_GO_STRUCT;
+
+typedef struct{
+    PLL_GO_STRUCT go;       // (结构体)锁相环运算数据
+
+    float T;                // (系统时钟)T运算离散周期
+
+    float Kp;               // (参数设计)Kp比例项增益
+    float Ki;               // (参数设计)Ki积分项增益
+
+    uint8_t is_position_mode; // (参数设计)位置环模式(1=OutThetaM持续累计不归一化; 0=每拍归一化到[0,2π))
+}ENC_PLL_STRUCT;
+
+void ENC_PLL_Init(ENC_PLL_STRUCT *pll);
+void ENC_PLL_Loop(ENC_PLL_STRUCT *pll);
+
 #endif
 

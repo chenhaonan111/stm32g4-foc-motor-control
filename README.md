@@ -8,8 +8,8 @@ A field-oriented control (FOC) firmware for PMSM/BLDC motors on STM32G4, support
 
 ## 功能特性 / Features
 
-- **FOC 全链路**:Clark / Park / 反 Park 变换、SVPWM、双轴电流 PID(带 LPF)。
-- **有感控制**:基于 TIM3 增量式编码器,实现电流环、速度环、位置环(三环级联)。
+- **FOC 全链路**:Clark / Park / 反 Park 变换、SVPWM、双轴电流 PID。
+- **有感控制**:基于 TIM3 增量式编码器,电角度直读 + 编码器锁相环(PLL)测速,实现电流环、速度环、位置环(三环级联)。
 - **无感控制**:
   - **SMO 滑模观测器**:基于反电势观测 + SPLL 锁相环提取电角度与转速,适用于中高速。
   - **SQHFI 方波高频注入**:利用磁饱和诱导凸极性,低速区通过高频电压注入 + 包络解调 + NSD(南北极检测)消除 2θ 歧义,提取转子角度。
@@ -105,7 +105,7 @@ FOCProject/
 
 ## 状态 / Status
 
-- 有感各模式、强拖启动、SMO、SQHFI 方波高频注入:开发完成,硬件实测调试进行中。
-- **SineHfi 正弦高频注入(`0x0C`/`0x0D`):仍在调试阶段**——角度跟踪稳定性与电流环参数整定尚未完成,上电默认 `RunMode` 即 `SINEHFI_SPEED_CURRENT_CLOSE`,复现/二次开发请知悉。
+- 有感各模式(速度反馈经编码器锁相环提取,带宽约 48 Hz 临界阻尼)、强拖启动、SMO、SQHFI 方波高频注入:开发完成,硬件实测调试进行中。
+- **SineHfi 正弦高频注入(`0x0C`/`0x0D`):仍在调试阶段**——角度跟踪稳定性与电流环参数整定尚未完成;上电默认 `RunMode` 为有感模式(以 `motor_publicdata.c` 中 `Motor_Struct_Init` 的当前设置为准),复现/二次开发请知悉。
 
 <img width="712" height="1200" alt="tb_image_share_1756172024298 jpg" src="https://github.com/user-attachments/assets/2857582e-6939-4cb3-91bd-c05203740ea8" />

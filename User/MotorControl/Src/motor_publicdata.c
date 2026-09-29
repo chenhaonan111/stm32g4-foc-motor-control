@@ -16,7 +16,7 @@ void Motor_Struct_Init(void)
     MC.Motor.ErrorCode = NONE_ERR;
     // RunMode: 电机运行时的控制模式，SINEHFI_SPEED_CURRENT_CLOSE 表示正弦HFI速度电流闭环
     //          （上电先自动执行一次NSD极性辨识，完成后速度环接管，电位器给速度）
-    MC.Motor.RunMode = SPEED_CURRENT_LOOP;
+    MC.Motor.RunMode = POS_SPEED_CURRENT_LOOP;
 
     // DutyCycle: 三相占空比初值 = ARR(0%占空比,000零矢量,下管全开安全态)
     MC.Foc.DutyCycleA = PWM_CYCLE / 2;
@@ -46,6 +46,13 @@ void Motor_Struct_Init(void)
     MC.EAngle.EncoderValMax = PUL_MAX;
     // Ts: 控制周期（秒），用于角度积分和观测器时间基准
     MC.EAngle.Ts = TS;
+
+    /* 编码器锁相环(wn=300rad/s,zeta=1.0:Kp=2*ζ*wn,Ki=wn^2) */
+    MC.EAngle.EPll.Kp = 600.0f;                //PLL比例增益(=2*ζ*wn)
+    MC.EAngle.EPll.Ki = 90000.0f;              //PLL积分增益(=wn^2,wn=300)
+    MC.EAngle.EPll.T = TS;                     //PLL执行周期(50us,20kHz,勿放分频环)
+    ENC_PLL_Init(&MC.EAngle.EPll);             //预计算离散系数(必须在Kp/Ki/T赋值之后调用!)
+    MC.EAngle.EncSpeedElecRPM = 0.0f;          //PLL速度输出清零
     
     // ============================================================================
     // 4. FOC（磁场定向控制）参数
@@ -208,14 +215,14 @@ void Motor_Struct_Init(void)
     // ============================================================================
     // 15. 电流环PID参数（Iq、Id环）
     // ============================================================================
-    MC.IqPid.Kp = 0.2f;                     // 比例系数(V/A)
-    MC.IqPid.Ki = 0.002f;                   // 积分系数(每拍累加口径)
+    MC.IqPid.Kp = 0.444f;                     // 比例系数(V/A)
+    MC.IqPid.Ki = 0.0803f;                   // 积分系数(每拍累加口径)
     MC.IqPid.Kd = 0.0f;                     // 微分系数
     MC.IqPid.OutMax = 10;                   // 输出电压上限（伏特）
     MC.IqPid.OutMin = -10;                  // 输出电压下限（伏特）
 
-    MC.IdPid.Kp = 0.2f;
-    MC.IdPid.Ki = 0.002f;
+    MC.IdPid.Kp = 0.444f;
+    MC.IdPid.Ki = 0.0803f;
     MC.IdPid.Kd = 0.0f;
     MC.IdPid.OutMax = 10;
     MC.IdPid.OutMin = -10;

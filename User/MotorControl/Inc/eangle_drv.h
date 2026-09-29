@@ -2,6 +2,7 @@
 #define __EANGLE_DRV_H
 
 #include "main.h"
+#include "pll_drv.h"
 
 /* 电角度结构体:阶段3 主要用发生器(Ts/ElectricalAngleSpdSet/ElectricalAngleSetPU);
    编码器相关成员(EncoderVal/CalibOffset 等)留给阶段4 有感闭环使用,这里先一并定义。 */
@@ -18,10 +19,13 @@ typedef struct
     float    ElectricalAnglePU;          /* 当前电角度标幺值(编码器算,阶段4用) */
     float    ElectricalAngleSpdSet;      /* 设定的电角速度(单位:电RPM) */
     float    ElectricalAngleSetPU;       /* 设定电角度标幺值(发生器累加输出,0~1) */
+    ENC_PLL_STRUCT EPll;                 /*(实例)编码器角度跟踪锁相环(测速用) */
+    float    EncSpeedElecRPM;            /*(输出)PLL速度输出(电角rpm,速度环反馈) */
 } E_ANGLE_STRUCT;
 
 /* 电角度发生器:按设定电角速度积分累加电角度(开环强拖用) */
 void Electrical_Angle_Generator(E_ANGLE_STRUCT *p);
 void Calculate_Encoder_Data(E_ANGLE_STRUCT *p);
+void Calculate_Encoder_Pll(E_ANGLE_STRUCT *p);
 
 #endif
