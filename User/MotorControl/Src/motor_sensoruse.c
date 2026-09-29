@@ -203,14 +203,7 @@ void Speed_Current_Loop(void)
         /* 3.3 设置速度环PID的参考值和反馈值 */
         MC.SpdPid.Ref = MC.TAccDec.SpeedOut;                  // 目标速度（来自T型加减速输出）
         MC.SpdPid.Fbk = MC.EAngle.EncSpeedElecRPM;            // 反馈速度（PLL输出的电角速度rpm）
-        if(MC.SpdPid.Fbk > -2000 && MC.SpdPid.Fbk < 2000) 
-        {
-            MC.SpdPid.Kp = MC.SpdPid.KpMax;
-        }
-        else
-        {
-            MC.SpdPid.Kp = MC.SpdPid.KpMin;
-        } 
+        
         /* 3.4 执行速度环PID调节 */
         // PID_Control 根据 Ref 和 Fbk 计算比例、积分项，输出控制量 Out。
         // 该输出即为电流环的 Iq 目标值（转矩电流分量给定）。
@@ -344,14 +337,16 @@ void Pos_Speed_Current_Loop(void)
         /* 2.3 设置速度环PID的参考值和反馈值 */
         MC.SpdPid.Ref = MC.PosPid.Out;                               // 目标速度来自位置环的输出
         MC.SpdPid.Fbk = MC.EAngle.EncSpeedElecRPM;                   // 反馈速度（PLL输出的电角速度rpm）
-                if(MC.SpdPid.Fbk > -2000 && MC.SpdPid.Fbk < 2000) 
-                {
-                    MC.SpdPid.Kp = MC.SpdPid.KpMax;
-                }
-                else
-                {
-                    MC.SpdPid.Kp = MC.SpdPid.KpMin;
-                } 
+
+        if(MC.SpdPid.Fbk > -2000.0f && MC.SpdPid.Fbk < 2000.0f)
+        {
+            MC.SpdPid.Kp = MC.SpdPid.KpMax;
+        }
+        else
+        {
+            MC.SpdPid.Kp = MC.SpdPid.KpMin;
+        }
+        
         /* 2.4 执行速度环PID调节 */
         // 速度环输出作为电流环的 Iq 目标值（转矩电流给定）
         PID_Control(&MC.SpdPid);

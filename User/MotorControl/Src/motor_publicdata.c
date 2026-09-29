@@ -230,7 +230,7 @@ void Motor_Struct_Init(void)
     // 16. 速度环PID参数（带分段限制）
     // ============================================================================
     MC.SpdPid.Kp = 0.001f;                  // 默认比例系数
-    MC.SpdPid.KpMax = 0.005f;               // 比例系数最大值（用于变速调参）
+    MC.SpdPid.KpMax = 0.004f;               // 比例系数最大值（用于变速调参）
     MC.SpdPid.KpMin = 0.001f;               // 比例系数最小值
     MC.SpdPid.Ki = 0.000002f;               // 积分系数
     MC.SpdPid.OutMax = 6;                   // 输出上限（对应Iq电流参考值，安培）
