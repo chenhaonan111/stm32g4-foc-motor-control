@@ -33,6 +33,42 @@ typedef struct
 void PLL_Calculate(PLL_STRUCT *p);
 
 /* ============================================================================
+ * SMO反电动势专用锁相环（归一化鉴相器）
+ * 与上方PLL_STRUCT(原始叉积鉴相、误差幅值∝反电动势幅值)的区别：
+ *   1. 鉴相器先求反电动势幅值EMag并归一化，误差恒在[-1,1]，增益不随转速变化；
+ *   2. EMag<0.5V(低速反电动势不足)时误差强制置0，防止低速噪声误锁；
+ *   3. 鉴相符号约定：正转速Dir=+1（与T_Shaped_Acc_Dec的SpeedOutDir配套，
+ *      与PLL_STRUCT的Dir=-1约定相反，不可混用）
+ * ==========================================================================*/
+typedef struct
+{
+    int8_t   Dir;                  //速度方向（归一化鉴相符号约定：正转速+1）
+    float    Ts;                   //调用周期
+
+    float    Ealpha;               //输入：滤波后α轴反电动势
+    float    Ebeta;                //输入：滤波后β轴反电动势
+
+    float    EMag;                 //反电动势幅值
+    float    Error;                //归一化鉴相误差[-1,1]
+    float    SinVal;               //正弦值
+    float    CosVal;               //余弦值
+
+    float    Kp;                   //锁相环KP
+    float    Ki;                   //锁相环KI
+    float    Ppart;                //比例项
+    float    Ipart;                //积分项
+
+    float    We;                   //观测电角速度（rad/s）
+    float    WeLPF;                //观测电角速度滤波值
+    float    WeLPFFactor;          //观测电角速度滤波系数
+
+    float    ETheta;               //观测角度 单位：弧度
+    float    EThetaPU;             //观测角度标幺值0~1
+}SMO_PLL;
+
+void SMO_PLL_Calculate(SMO_PLL *p);
+
+/* ============================================================================
  * HFI专用标量误差锁相环
  * 与上方PLL_STRUCT(正交信号输入型QPLL)的区别：
  *   输入go.Error为已解算好的标量误差信号(∝sin(2Δθ)，正弦HFI解调输出)，

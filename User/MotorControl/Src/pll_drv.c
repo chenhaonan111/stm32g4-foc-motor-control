@@ -1,5 +1,6 @@
 #include "pll_drv.h"
 #include "math_drv.h"
+#include <math.h>
 
 /*函数功能: 正交锁相环（QPLL）—— 从正交信号中提取转子角度和角速度*/
 void PLL_Calculate(PLL_STRUCT *p)
@@ -33,6 +34,48 @@ void PLL_Calculate(PLL_STRUCT *p)
     // 6. 角度格式转换（供外部使用）
     p->ETheta = p->ThetaFore;
     // 标幺化角度 0~1 对应 0~2π
+    p->EThetaPU = p->ETheta / 6.28318f;
+}
+
+/*函数功能: SMO反电动势专用锁相环——归一化鉴相器+低速EMF门限*/
+void SMO_PLL_Calculate(SMO_PLL *p)
+{
+    // 1. 求反电动势幅值
+    p->EMag = sqrtf(p->Ealpha * p->Ealpha + p->Ebeta * p->Ebeta);
+
+    // 2. 归一化鉴相：误差=Dir*(-Eα*cosθ̂-Eβ*sinθ̂)/EMag，恒在[-1,1]，
+    //    增益不随反电动势幅值(转速)变化；反电动势不足时(EMag<0.5V)误差置0防误锁
+    if (p->EMag >= 0.5f)
+    {
+        p->Error = p->Dir * (-p->Ealpha * p->CosVal - p->Ebeta * p->SinVal) / p->EMag;
+    }
+    else
+    {
+        p->Error = 0.0f;
+    }
+
+    // 3. PI环路滤波器
+    p->Ppart = p->Error * p->Kp;
+    p->Ipart += p->Error * p->Ki;
+    p->We = p->Ppart + p->Ipart;
+
+    // 4. 观测电角速度低通滤波
+    p->WeLPF = p->WeLPFFactor * p->We + (1.0f - p->WeLPFFactor) * p->WeLPF;
+
+    // 5. 积分得到观测电角度（压控振荡器）
+    p->ETheta += p->We * p->Ts;
+
+    // 6. 角度归一化到 [0, 2π)
+    if (p->ETheta > 6.28318f)
+    {
+        p->ETheta -= 6.28318f;
+    }
+    else if (p->ETheta < 0.0f)
+    {
+        p->ETheta += 6.28318f;
+    }
+
+    // 7. 角度格式转换（标幺值 0~1 对应 0~2π）
     p->EThetaPU = p->ETheta / 6.28318f;
 }
 

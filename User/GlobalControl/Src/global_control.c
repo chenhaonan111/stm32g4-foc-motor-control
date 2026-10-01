@@ -114,7 +114,8 @@ void Target_Set(void)
             {
                 MC.Speed.MechanicalSpeedSet = 0;
             }
-        }
+        }break;
+        
         case SQHFI_SMO_SPEED_CURRENT_CLOSE:
         {
             MC.Speed.MechanicalSpeedSet  =  Speed_Set_Dir * MC.Sample.AdcBuff[1] * 0.5f;            //使用波轮电位器给电机目标转速（速度闭环模式下）

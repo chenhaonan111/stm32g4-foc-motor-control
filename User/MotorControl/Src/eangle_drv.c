@@ -55,7 +55,7 @@ void Calculate_Encoder_Data(E_ANGLE_STRUCT *p)
     p->ElectricalAnglePU = (float)ElectricalVal / (float)p->EncoderValMax;
 }
 
-/*编码器锁相环测速(每拍20kHz执行,勿放分频环)*/
+/*编码器锁相环测速*/
 void Calculate_Encoder_Pll(E_ANGLE_STRUCT *p)
 {
 //    if(p->Dir)

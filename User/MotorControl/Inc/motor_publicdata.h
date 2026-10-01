@@ -216,7 +216,7 @@ typedef struct
     TSHAPEDACCDEC_STRUCT    TAccDec;
     POSITION_STRUCT         Position;
     SMO_STRUCT              SMO;
-    PLL_STRUCT              SPLL;
+    SMO_PLL                 SPLL;
     PLL_STRUCT              HPLL;
     STRONG_DRAG_TO_OBSERVER StrongDragToObs;
     SQHFI_STRUCT              SqHfi;

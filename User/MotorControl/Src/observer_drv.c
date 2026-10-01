@@ -9,21 +9,21 @@ void SMO_Calculate(SMO_STRUCT *p)
     p->IbetaFore  += p->Ts * (-p->Rs / p->Ld * p->IbetaFore  + (p->Ubeta  - p->EbetaForeLPF)  / p->Ld);
 
     // 2. 滑模切换函数（饱和函数，减小抖振）
-    // 边界层设定为 ±1.0（可根据实际电流误差范围调整）
-    // 当误差 > 1.0 时，输出 +Gain
-    if ((p->IalphaFore - p->Ialpha) > 1.0f)
+    // 边界层设定为 ±0.5（实测整定值，54µH电感下稳定余量与收敛速度的折中）
+    // 当误差 > 0.5 时，输出 +Gain
+    if ((p->IalphaFore - p->Ialpha) > 0.5f)
         p->EalphaFore = p->Gain;
-    // 当误差 < -1.0 时，输出 -Gain
-    else if ((p->IalphaFore - p->Ialpha) < -1.0f)
+    // 当误差 < -0.5 时，输出 -Gain
+    else if ((p->IalphaFore - p->Ialpha) < -0.5f)
         p->EalphaFore = -p->Gain;
     // 在边界层内，输出 = Gain * 误差（线性区）
     else
         p->EalphaFore = p->Gain * (p->IalphaFore - p->Ialpha);
 
     // β轴同理
-    if ((p->IbetaFore - p->Ibeta) > 1.0f)
+    if ((p->IbetaFore - p->Ibeta) > 0.5f)
         p->EbetaFore = p->Gain;
-    else if ((p->IbetaFore - p->Ibeta) < -1.0f)
+    else if ((p->IbetaFore - p->Ibeta) < -0.5f)
         p->EbetaFore = -p->Gain;
     else
         p->EbetaFore = p->Gain * (p->IbetaFore - p->Ibeta);

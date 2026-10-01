@@ -304,9 +304,9 @@ void Strong_Drag_Smo_Speed_Current_Loop(void)
     // 5. 锁相环（PLL）处理：从反电动势提取电角度和角速度
     // ============================================================================
     MC.SPLL.Dir = MC.TAccDec.SpeedOutDir;            // 速度方向（用于PLL方向判断）
-    MC.SPLL.Ain = MC.SMO.EalphaForeLPF;              // 滤波后的Alpha轴反电动势
-    MC.SPLL.Bin = MC.SMO.EbetaForeLPF;               // 滤波后的Beta轴反电动势
-    PLL_Calculate(&MC.SPLL);                         // PLL计算，输出电角度（EThetaPU）和角速度
+    MC.SPLL.Ealpha = MC.SMO.EalphaForeLPF;           // 滤波后的Alpha轴反电动势
+    MC.SPLL.Ebeta = MC.SMO.EbetaForeLPF;             // 滤波后的Beta轴反电动势
+    SMO_PLL_Calculate(&MC.SPLL);                     // PLL计算，输出电角度（EThetaPU）和角速度
     // 根据PLL输出的电角度计算正余弦值，用于后续Park变换
     Calculate_Sin_Cos(MC.SPLL.EThetaPU, &MC.SPLL.SinVal, &MC.SPLL.CosVal);
 
@@ -315,7 +315,7 @@ void Strong_Drag_Smo_Speed_Current_Loop(void)
     // ============================================================================
     // 记录开环给定速度（来自T型加减速）、闭环观测速度（来自PLL）、开环角度、闭环角度、运动状态
     MC.StrongDragToObs.OpenSpeed = MC.TAccDec.SpeedOut;
-    MC.StrongDragToObs.CloseSpeed = MC.SPLL.WeForeLPF / TWO_PI * 60.0f;   // 电角速度(rad/s) -> rpm
+    MC.StrongDragToObs.CloseSpeed = MC.SPLL.WeLPF / TWO_PI * 60.0f;   // 电角速度(rad/s) -> rpm
     MC.StrongDragToObs.ThetaRef = MC.EAngle.ElectricalAngleSetPU;         // 开环参考角度
     MC.StrongDragToObs.ThetaObs = MC.SPLL.EThetaPU;                       // 闭环观测角度
     MC.StrongDragToObs.MotionState = MC.TAccDec.MotionState;              // 当前加减速状态
@@ -369,7 +369,7 @@ void Strong_Drag_Smo_Speed_Current_Loop(void)
         // 速度环目标值：T型加减速输出的速度（rpm）
         MC.SpdPid.Ref = MC.TAccDec.SpeedOut;
         // 速度环反馈值：PLL观测的电角速度转换为机械速度（rpm）
-        MC.SpdPid.Fbk = MC.SPLL.WeForeLPF / TWO_PI * 60.0f;
+        MC.SpdPid.Fbk = MC.SPLL.WeLPF / TWO_PI * 60.0f;
         // 仅在闭环模式下执行速度环PID（开环时速度环不调节，直接使用强拖电流）
         if(MC.StrongDragToObs.GeneralMode == CLOSE_LOOP)
         {
@@ -410,11 +410,11 @@ void Strong_Drag_Smo_Speed_Current_Loop(void)
     // Park变换：Ialpha,Ibeta -> Id,Iq（使用上面计算的正余弦）
     Park_Transform(&MC.Foc);
 
-    // ============================================================================
-    // 11. Id/Iq低通滤波
-    // ============================================================================
-    MC.Foc.IdLPF = MC.Foc.Id * MC.Foc.IdLPFFactor + MC.Foc.IdLPF * (1 - MC.Foc.IdLPFFactor);
-    MC.Foc.IqLPF = MC.Foc.Iq * MC.Foc.IqLPFFactor + MC.Foc.IqLPF * (1 - MC.Foc.IqLPFFactor);
+//    // ============================================================================
+//    // 11. Id/Iq低通滤波
+//    // ============================================================================
+//    MC.Foc.IdLPF = MC.Foc.Id * MC.Foc.IdLPFFactor + MC.Foc.IdLPF * (1 - MC.Foc.IdLPFFactor);
+//    MC.Foc.IqLPF = MC.Foc.Iq * MC.Foc.IqLPFFactor + MC.Foc.IqLPF * (1 - MC.Foc.IqLPFFactor);
 
     // ============================================================================
     // 12. 设置电流环的参考值（根据开环/闭环模式不同）
@@ -430,7 +430,7 @@ void Strong_Drag_Smo_Speed_Current_Loop(void)
             MC.IqPid.Ref = 0;           // Iq参考为0，电机无力矩
             MC.SMO.EalphaFore = 0;
             MC.SMO.EbetaFore = 0;
-            MC.SPLL.WeFore = 0;
+            MC.SPLL.WeLPF = 0;
         }
         else
         {
@@ -446,8 +446,8 @@ void Strong_Drag_Smo_Speed_Current_Loop(void)
     }
 
     // 设置电流环反馈值（滤波后的Id/Iq）
-    MC.IqPid.Fbk = MC.Foc.IqLPF;
-    MC.IdPid.Fbk = MC.Foc.IdLPF;
+    MC.IqPid.Fbk = MC.Foc.Iq;
+    MC.IdPid.Fbk = MC.Foc.Id;
 
     // 执行电流环PID调节
     PID_Control(&MC.IqPid);            // 输出Uq
@@ -730,9 +730,9 @@ void SqHfi_Smo_Speed_Current_Loop(void)
     // 4. 锁相环（PLL）从 SMO 反电动势中提取电角度和角速度
     // ============================================================================
     MC.SPLL.Dir = MC.TAccDec.SpeedOutDir;   // 速度方向（用于PLL正反转判断）
-    MC.SPLL.Ain = MC.SMO.EalphaForeLPF;     // 滤波后的 α 轴反电动势
-    MC.SPLL.Bin = MC.SMO.EbetaForeLPF;      // 滤波后的 β 轴反电动势
-    PLL_Calculate(&MC.SPLL);                // PLL计算，输出电角度 SPLL.EThetaPU 和电角速度
+    MC.SPLL.Ealpha = MC.SMO.EalphaForeLPF;  // 滤波后的 α 轴反电动势
+    MC.SPLL.Ebeta = MC.SMO.EbetaForeLPF;    // 滤波后的 β 轴反电动势
+    SMO_PLL_Calculate(&MC.SPLL);            // PLL计算，输出电角度 SPLL.EThetaPU 和电角速度
     // 根据 PLL 输出的电角度计算正余弦，供后续可能的使用
     Calculate_Sin_Cos(MC.SPLL.EThetaPU, &MC.SPLL.SinVal, &MC.SPLL.CosVal);
 
@@ -786,7 +786,7 @@ void SqHfi_Smo_Speed_Current_Loop(void)
     // 记录两种观测器估算的速度（rpm）和角度（标幺值）
     MC.SqHfiToObs.SqHfiEleSpeed = MC.HPLL.WeForeLPF / TWO_PI * 60.0f;  // SQHFI 速度（rad/s → rpm）
     MC.SqHfiToObs.SqHfiTheta   = MC.HPLL.EThetaPU;                     // SQHFI 角度（标幺值 0~1）
-    MC.SqHfiToObs.ObsEleSpeed = MC.SPLL.WeForeLPF / TWO_PI * 60.0f;  // SMO 速度（rpm）
+    MC.SqHfiToObs.ObsEleSpeed = MC.SPLL.WeLPF / TWO_PI * 60.0f;  // SMO 速度（rpm）
     MC.SqHfiToObs.ObsTheta    = MC.SPLL.EThetaPU;                    // SMO 角度（标幺值）
     MC.SqHfiToObs.SpeedRef    = MC.TAccDec.SpeedOut;                 // 当前速度参考值
     // 根据速度区间、角度误差等条件，计算最终输出的电角度（ThetaOut）和速度（EleSpeedOut）

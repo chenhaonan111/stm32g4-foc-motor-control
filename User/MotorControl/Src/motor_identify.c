@@ -40,9 +40,14 @@ void Motor_Identify(void)
             /* ----- 子状态 Flag = 1：逐步增加 Ud 直到电流达到第一个目标值（0.6倍最大电流）----- */
             if (MC.Identify.Flag == 1)
             {
-                // 计算当前实际电流值：Iu * Ud * 1.5 / Ubus
-                // 推导：Ud施加于d轴，实际d轴电流 Id ≈ Iu（因为电角度=0，Iu与Id同相）
-                // 1.5 为三相电流标幺化系数（取决于Clark变换实现）
+                // 电流判据：current = Iu * (1.5 * Ud / Ubus)
+                // θ=0 时反Park输出 Ualpha=Ud、Ubeta=0，代入SVPWM公式（foc_drv.c）
+                // 得有效矢量V1(100)的作用占空比 t1 = T1/PwmCycle = 1.5*Ud/Ubus（此时T2=0），
+                // 故 current = Iu * t1，物理意义是平均直流母线电流：母线仅在V1作用期间
+                // 向电机供出相电流Iu，V0/V7期间电流在桥臂内环流，一拍平均即为 t1*Iu
+                // （等价于总功率/Ubus = 1.5*Ud*Iu/Ubus）。
+                // 注意：θ=0 时 d轴电流 Id=Iu（等幅值Clarke），此判据并非相电流，
+                // 实际相电流 Iu 会大于判据目标值；Rs=ΔU/ΔI 用原始采样值，不受此影响
                 float current = (MC.Sample.IuReal * MC.Foc.Ud * 1.5f) / MC.Sample.BusReal;
                 if (current >= 0.6f * MC.Identify.CurMax)   // 达到目标电流的60%
                 {
@@ -75,6 +80,7 @@ void Motor_Identify(void)
             /* ----- 子状态 Flag = 3：继续升压，直到电流达到最大电流 CurMax（第二组）----- */
             if (MC.Identify.Flag == 3)
             {
+                // 电流判据同Flag=1：current = Iu * t1（t1为V1(100)占空比），即平均母线电流
                 float current = (MC.Sample.IuReal * MC.Foc.Ud * 1.5f) / MC.Sample.BusReal;
                 if (current >= MC.Identify.CurMax)   // 达到最大电流
                 {
@@ -219,14 +225,14 @@ void Motor_Identify(void)
                     {
                         MC.EAngle.EncoderValChange -= PUL_MAX;
                     }
-                    // 方向判断：正差值为正向，负差值为反向
+                    // 方向判断
                     if (MC.EAngle.EncoderValChange > 0)
                     {
-                        MC.EAngle.Dir = 1;         // 假设1表示正向
+                        MC.EAngle.Dir = 1;         // 1表示反转
                     }
                     else if (MC.EAngle.EncoderValChange < 0)
                     {
-                        MC.EAngle.Dir = 0;         // 0表示反向
+                        MC.EAngle.Dir = 0;         // 0表示正转
                     }
                     else
                     {

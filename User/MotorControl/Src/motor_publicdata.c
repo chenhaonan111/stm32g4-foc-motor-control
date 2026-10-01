@@ -16,7 +16,7 @@ void Motor_Struct_Init(void)
     MC.Motor.ErrorCode = NONE_ERR;
     // RunMode: 电机运行时的控制模式，SINEHFI_SPEED_CURRENT_CLOSE 表示正弦HFI速度电流闭环
     //          （上电先自动执行一次NSD极性辨识，完成后速度环接管，电位器给速度）
-    MC.Motor.RunMode = POS_SPEED_CURRENT_LOOP;
+    MC.Motor.RunMode = STRONG_DRAG_SMO_SPEED_CURRENT_LOOP;
 
     // DutyCycle: 三相占空比初值 = ARR(0%占空比,000零矢量,下管全开安全态)
     MC.Foc.DutyCycleA = PWM_CYCLE / 2;
@@ -114,12 +114,12 @@ void Motor_Struct_Init(void)
     MC.SMO.EabForeLPFFactor = 0.1f;
     
     // ============================================================================
-    // 10. 锁相环（SPLL）参数（用于从反电动势提取转速和角度）
+    // 10. 锁相环（SPLL）参数（归一化鉴相器，增益/滤波为实测整定值）
     // ============================================================================
     MC.SPLL.Ts = TS;
-    MC.SPLL.Kp = 1200.0f;                  // 比例系数
-    MC.SPLL.Ki = 100.0f;                   // 积分系数
-    MC.SPLL.WeForeLPFFactor = 0.01f;       // 观测电角速度低通滤波系数
+    MC.SPLL.Kp = 600.0f;                   // 比例系数
+    MC.SPLL.Ki = 4.5f;                     // 积分系数
+    MC.SPLL.WeLPFFactor = 0.1f;            // 观测电角速度低通滤波系数
 
     // ============================================================================
     // 11. 高频注入（SQHFI）及锁相环（HPLL）参数（用于低速无传感器）
